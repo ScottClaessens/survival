@@ -1,0 +1,923 @@
+---
+title: "Hidden vs Visible Resources in the Survival Game (Study 3)"
+author: Scott Claessens
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
+# 0. Setup
+
+You'll need to download [Stan](http://mc-stan.org/) to your machine for these analyses. Note: this document will save **brms** model fits into your working directory.
+
+First, let's install all the packages we'll need.
+
+```{r message=FALSE, warning=FALSE}
+require(brms)
+require(ggplot2)
+require(tidyverse)
+require(grid)
+require(gridExtra)
+```
+
+Now, read in the data from Study 3. 
+
+```{r}
+(
+  d <- 
+    read.csv('data/exp3data.csv', header = TRUE) %>%
+    as_tibble() 
+)
+```
+
+Each row is a different participant in the study (there were 142). Columns 1-36 are variables that summarise the whole session, while the rest of the columns specify the events that occurred in each of the 25 rounds.
+
+# 1. Binomial - Number of shocks
+
+We'll trim the dataset, to make it more manageable.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(VisibleAsk, VisibleGive, rounds_survived, overall_num_shocks) 
+)
+```
+
+In this dataset, VisibleAsk == 1 implies that the participants could see their partner's cattle holdings (and vice versa) when asking for cattle. VisibleGive == 1 implies that the participants could see their partner's cattle holdings (and vice versa) when giving cattle. There are four conditions in total, in a 2x2 design.
+
+We first test whether the probability of a shock occurring differs between the conditions. All analyses in this document will use the `brm()` function. Learn more about the **brms** package [here](https://github.com/paul-buerkner/brms). Also, see [here](https://bookdown.org/content/1850/horoscopes-insights.html#use-the-0-intercept-syntax) for an explanation of why I use the `0 + intercept` syntax throughout this document.
+
+```{r eval=F}
+b3.1 <-
+  brm(data = d.trim, family = binomial,
+      overall_num_shocks | trials(rounds_survived) ~ 0 + intercept + VisibleAsk*VisibleGive,
+      prior = c(prior(normal(0, 1), class = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b3.1, file = "models/exp3_brmsfit1.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit1.rda")
+```
+
+We set the `seed` to a random number, to make the results reproducible. Here are the priors that were set for this model.
+
+```{r}
+prior_summary(b3.1)
+```
+
+Let's look at the results.
+
+```{r}
+print(b3.1)
+```
+
+Plotting the parameters.
+
+```{r fig.height = 2, fig.width = 7}
+stanplot(b3.1)
+```
+
+The 95% credible intervals for the parameters do not cross 0, implying that the probability of a shock does not differ between conditions.
+
+# 2. Gaussian - Total amount of cattle lost due to shocks
+
+Trim the dataset again.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(VisibleAsk, VisibleGive, total_cattle_lost)
+)
+```
+
+We now fit a model to determine if the total amount of cattle lost due to shocks varies between conditions.
+
+```{r eval=F}
+b3.2 <-
+  brm(data = d.trim, family = gaussian,
+      total_cattle_lost ~ 0 + intercept + VisibleAsk*VisibleGive,
+      prior = c(prior(normal(0, 100), class = b, coef = 'intercept'),
+                prior(normal(0, 5), class = b, coef = 'VisibleAsk'),
+                prior(normal(0, 5), class = b, coef = 'VisibleGive')),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b3.2, file = "models/exp3_brmsfit2.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit2.rda")
+```
+
+The priors we used.
+
+```{r}
+prior_summary(b3.2)
+```
+
+The results.
+
+```{r}
+print(b3.2)
+```
+
+Plot the parameters.
+
+```{r fig.height=2, fig.width=7}
+stanplot(b3.2)
+```
+
+The total amount of cattle lost does not seem to vary between conditions.
+
+# 3. Binomial - Probability of requesting
+
+## 3.1. Fitting the model
+
+Get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, VisibleAsk, VisibleGive, ends_with('.player.request')) %>%
+    gather(round_number, request, ends_with('.player.request')) %>%
+    mutate(round_number = rep(1:25, each = 142)) %>%
+    drop_na()
+)
+```
+
+This leaves us with 2574 request decisions.
+
+We now fit a varying intercept and slope model, with participants nested within groups. We only allow the slope for round number to vary, as participants completed multiple rounds (within-subjects) but only one of four conditions (between-subjects).
+
+```{r eval=F}
+b3.3 <-
+  brm(data = d.trim, family = bernoulli,
+      request ~ 0 + intercept + round_number + VisibleAsk*VisibleGive
+      + (0 + intercept + round_number | Group/ID),
+      prior = c(prior(normal(0, 1), class = b)),
+      sample_prior = TRUE,
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.9),
+      seed = 2113)
+
+save(b3.3, file = "models/exp3_brmsfit3.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit3.rda")
+```
+
+Here are the priors for the model we just fitted.
+
+```{r}
+prior_summary(b3.3)
+```
+
+Now let's see the results.
+
+```{r}
+print(b3.3)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b3.3)
+```
+
+Trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b3.3, ask = F)
+```
+
+Looks like Stan sampled efficiently.
+
+In this model, the 95% credible intervals for the parameters of interest all cross 0. This implies that the probability of requesting did not differ across conditions. However, this is on the logit scale. Let's sample from the posterior and convert to the probability scale.
+
+```{r}
+post <- posterior_samples(b3.3)
+
+hidden_prob <- inv_logit_scaled(post$b_intercept)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAsk_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+
+visibleAsk_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+
+visibleGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
+
+visibleAskGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+These probabilities are in the expected direction. However, the conditions do not seem to differ from one another.
+
+```{r}
+diff1 <- hidden_prob - visibleAsk_prob
+quantile(diff1, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff2 <- hidden_prob - visibleGive_prob
+quantile(diff2, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff3 <- hidden_prob - visibleAskGive_prob
+quantile(diff3, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff4 <- visibleAsk_prob - visibleGive_prob
+quantile(diff4, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff5 <- visibleAsk_prob - visibleAskGive_prob
+quantile(diff5, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff6 <- visibleGive_prob - visibleAskGive_prob
+quantile(diff6, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+The largest difference `diff3` is between the Hidden and Visible (when Asking and Giving) conditions, but it isn't a "statistically significant" difference.
+
+Do Bayes factors support this conclusion?
+
+```{r}
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.3, "(inv_logit_scaled(intercept + VisibleGive) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+All of these Bayes factors fall into the zone of "anecdotal evidence" (between 0.33 and 3). Thus, the probabilities are not different or equal across all conditions.
+
+How much variance in the outcome does this model explain? We use the `bayes_R2()` function to get a Bayesian estimate of R-squared.
+
+```{r}
+bayes_R2(b3.3) %>% round(2)
+```
+
+This model explains around 26% of the variance.
+
+```{r echo=F}
+# cleanup
+rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
+   hidden_prob, visibleAsk_prob, visibleAskGive_prob, visibleGive_prob)
+```
+
+# 4. Binomial - Probability of requesting when above the minimum threshold
+
+## 4.1. Fitting the model
+
+As before, get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows. However, we also filter out rows in which the player was below the minimum survival threshold (64 cattle).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, VisibleAsk, VisibleGive, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request')) %>%
+    gather(key, value, -ID, -Group, -VisibleAsk, -VisibleGive) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|request)") %>%
+    spread(variable, value) %>%
+    mutate(round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>%                            # drop NAs, as player is no longer alive
+    filter(herd_size_after_shock >= 64)      # only rounds above the minimum threshold
+)
+```
+
+This leaves us with 2286 request decisions.
+
+Fit the varying intercept and slope model, with participants nested within groups.
+
+```{r eval=F}
+b3.4 <-
+  brm(data = d.trim, family = bernoulli,
+      request ~ 0 + intercept + round_number + VisibleAsk*VisibleGive
+      + (0 + intercept + round_number | Group/ID),
+      prior = c(prior(normal(0, 1), class = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.9),
+      seed = 2113)
+
+save(b3.4, file = "models/exp3_brmsfit4.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit4.rda")
+```
+
+Here are the priors for this model.
+
+```{r}
+prior_summary(b3.4)
+```
+
+Let's see the results.
+
+```{r}
+print(b3.4)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b3.4)
+```
+
+Trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b3.4, ask = F)
+```
+
+These HMC chains look healthy.
+
+Again, we sample from the posterior and convert to the probability scale.
+
+```{r}
+post <- posterior_samples(b3.4)
+
+hidden_prob <- inv_logit_scaled(post$b_intercept)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAsk_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+
+visibleAsk_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+
+visibleGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
+
+visibleAskGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+And the differences?
+
+```{r}
+diff1 <- hidden_prob - visibleAsk_prob
+quantile(diff1, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff2 <- hidden_prob - visibleGive_prob
+quantile(diff2, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff3 <- hidden_prob - visibleAskGive_prob
+quantile(diff3, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff4 <- visibleAsk_prob - visibleGive_prob
+quantile(diff4, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff5 <- visibleAsk_prob - visibleAskGive_prob
+quantile(diff5, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff6 <- visibleGive_prob - visibleAskGive_prob
+quantile(diff6, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+The largest probability differences lie between the Hidden and Visible Ask & Give conditions (`diff3`) and between the Visible Ask and Visible Ask & Give conditions (`diff5`).
+
+What about Bayes factors?
+
+```{r}
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.4, "(inv_logit_scaled(intercept + VisibleGive) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+Finally, we use the `bayes_R2()` function to get a Bayesian estimate of R-squared.
+
+```{r}
+bayes_R2(b3.4) %>% round(2)
+```
+
+This model explains around 32% of the variance in the outcome.
+
+```{r echo=F}
+# cleanup
+rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
+   hidden_prob, visibleAsk_prob, visibleAskGive_prob, visibleGive_prob)
+```
+
+# 5. Binomial - Probability of not responding to a request
+
+## 5.1. Fitting the model
+
+Get long-format data frame with 'received' variable (i.e. how much a player received on any given round). We swap this around so it reflects how much the player *gave* to their partner (i.e. how much their partner received). We drop rows with NAs, since partners did not request help in that particular round. We then code whether the player gave nothing in response to the request (1) or gave at least one cattle (0).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, VisibleAsk, VisibleGive, ends_with('.player.received')) %>%
+    # swap every other value to get what the player GAVE, rather than what they RECEIVED
+    # swapping works because each player is next to their partner in the data frame
+    mutate_at(vars(ends_with(".player.received")), function(x) x[1:nrow(d) + c(1,-1)]) %>%
+    gather(round_number, responded, ends_with('.player.received')) %>%
+    mutate(round_number = rep(1:25, each = 142)) %>%
+    # drop NAs, as no requesting happened
+    drop_na() %>%
+    # 0 = responded, 1 = did not respond
+    mutate(notResponded = ifelse(responded > 0, 0, 1) %>% as.integer())
+)
+```
+
+This leaves us with 576 possible responses to requests.
+
+We then fit the varying intercept and slope model, again with participants nested within groups.
+
+```{r eval=F}
+b3.5 <-
+  brm(data = d.trim, family = bernoulli,
+      notResponded ~ 0 + intercept + round_number + VisibleGive*VisibleAsk
+      + (0 + intercept + round_number | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.99),
+      seed = 2113)
+
+save(b3.5, file = "models/exp3_brmsfit5.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit5.rda")
+```
+
+Here are the priors for the model we just fitted.
+
+```{r}
+prior_summary(b3.5)
+```
+
+The results.
+
+```{r}
+print(b3.5)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b3.5)
+```
+
+Let's look at the trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b3.5, ask = F)
+```
+
+RHat values, n_eff values, and trace plots look okay.
+
+As before, we sample from the posterior and convert to the absolute probability scale.
+
+```{r}
+post <- posterior_samples(b3.5)
+
+hidden_prob <- inv_logit_scaled(post$b_intercept)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAsk_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+
+visibleAsk_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+
+visibleGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleGive:VisibleAsk`)
+
+visibleAskGive_prob %>%
+  median() %>% 
+  round(2)
+```
+
+And the differences?
+
+```{r}
+diff1 <- hidden_prob - visibleAsk_prob
+quantile(diff1, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff2 <- hidden_prob - visibleGive_prob
+quantile(diff2, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff3 <- hidden_prob - visibleAskGive_prob
+quantile(diff3, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff4 <- visibleAsk_prob - visibleGive_prob
+quantile(diff4, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff5 <- visibleAsk_prob - visibleAskGive_prob
+quantile(diff5, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff6 <- visibleGive_prob - visibleAskGive_prob
+quantile(diff6, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+No differences between conditions exist. Will Bayes factors support this?
+
+```{r}
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk + VisibleGive:VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive + VisibleGive:VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.5, "(inv_logit_scaled(intercept + VisibleGive) - inv_logit_scaled(intercept + VisibleGive + VisibleGive:VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+These all lie within the range of "anecdotal evidence".
+
+```{r}
+bayes_R2(b3.5) %>% round(2)
+```
+
+Finally, `bayes_R2()` tells us that this model explains around 30% of the variance in the outcome.
+
+```{r}
+# cleanup
+rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
+   hidden_prob, visibleAsk_prob, visibleAskGive_prob, visibleGive_prob)
+```
+
+
+# 6. Binomial - Probability of not fulfilling a request when able
+
+## 6.1. Fitting the model
+
+The data wrangling for this model is a little trickier.
+
+1. First, we get a long-format data frame with (a) the player's herd size that round, (b) how much the player received that round, and (c) how much the player requested that round.
+2. Next, we flip the latter two variables to get (b') how much the *player gave*, and (c') how much the *player's partner requested*. 'Flipping' is possible because partners sit next to the focal player in the data frame.
+3. We drop rows with NAs, as no requesting happened this round.
+4. We keep only rows in which the partner's request could be fulfilled without dropping the player below the minimum survival threshold (i.e. the player was *able* to give).
+5. Finally, we code whether the player fulfilled the request by giving what was asked or more (0) or did not fulfill the request (1).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    # 1. select herd size, received, and requested
+    select(ID, Group, VisibleAsk, VisibleGive, ends_with('.player.herd_size_after_shock'),
+           ends_with('.player.received'),
+           ends_with('.player.request_amount')) %>%
+    # 2a. flip the variables to get what the player gave and what their partner requested
+    mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+              function(x) x[1:nrow(d) + c(1,-1)]) %>%
+    gather(key, value, -ID, -Group, -VisibleAsk, -VisibleGive) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|received|request_amount)") %>%
+    spread(variable, value) %>%
+    # 2b. rename the variables to match their new meaning
+    rename(gave              = received,
+           partner_requested = request_amount) %>%
+    mutate(round_number      = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    # 3. drop NAs, as no requesting happened
+    drop_na() %>%
+    # 4. was the player able to give?
+    filter(herd_size_after_shock - partner_requested >= 64) %>%
+    # 5. code 0 = request fulfilled, 1 = request not fulfilled
+    mutate(notFulfilled = ifelse(gave >= partner_requested, 0, 1) %>% as.integer())
+)
+```
+
+This leaves us with 466 possible response decisions in which the player was able to give their partner what they asked for. Our outcome variable is whether they fulfilled that request or not.
+
+We now fit the varying intercept and slope model, again with participants nested within groups.
+
+```{r eval=F}
+b3.6 <-
+  brm(data = d.trim, family = bernoulli,
+      notFulfilled ~ 0 + intercept + round_number + VisibleAsk*VisibleGive
+      + (0 + intercept + round_number | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE,
+      iter = 2500, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b3.6, file = "models/exp3_brmsfit6.rda")
+```
+
+```{r echo=F}
+load("models/exp3_brmsfit6.rda")
+```
+
+Here are the priors we used for model `b3.6`.
+
+```{r}
+prior_summary(b3.6)
+```
+
+Let's see the results.
+
+```{r}
+print(b3.6)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b3.6)
+```
+
+Let's look at the trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b3.6, ask = F)
+```
+
+Again, the RHat values, n_eff values, and trace plots look okay.
+
+```{r}
+post <- posterior_samples(b3.6)
+
+hidden_prob <- inv_logit_scaled(post$b_intercept)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAsk_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+
+visibleAsk_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+
+visibleGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
+
+visibleAskGive_prob %>%
+  median() %>%
+  round(2)
+```
+
+And the pairwise differences?
+
+```{r}
+diff1 <- hidden_prob - visibleAsk_prob
+quantile(diff1, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff2 <- hidden_prob - visibleGive_prob
+quantile(diff2, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff3 <- hidden_prob - visibleAskGive_prob
+quantile(diff3, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff4 <- visibleAsk_prob - visibleGive_prob
+quantile(diff4, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff5 <- visibleAsk_prob - visibleAskGive_prob
+quantile(diff5, c(0.025, 0.5, 0.975)) %>% round(2)
+
+diff6 <- visibleGive_prob - visibleAskGive_prob
+quantile(diff6, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+Differences exist between the Hidden and Visible Ask & Give conditions (`diff3`) and between the Visible Give and Visible Ask & Give conditions (`diff6`). What do Bayes factors say?
+
+```{r}
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleAsk)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept + VisibleAsk) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+
+(1 / hypothesis(b3.6, "(inv_logit_scaled(intercept + VisibleGive) - inv_logit_scaled(intercept + VisibleGive + VisibleAsk:VisibleGive)) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+There is confident support for the hypothesis that the probability of stinginess is greater in the Hidden condition than the Visible Ask & Give condition (`diff3`). All other comparisons are inconclusive.
+
+```{r}
+bayes_R2(b3.6) %>% round(2)
+```
+
+This model explains around 46% of the variance in the outcome.
+
+```{r}
+# cleanup
+rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
+   hidden_prob, visibleAsk_prob, visibleAskGive_prob, visibleGive_prob)
+```
+
+## 6.2. Plotting the results
+
+```{r echo=F}
+post <- posterior_samples(b3.4)
+hidden_prob         <- inv_logit_scaled(post$b_intercept)
+visibleGive_prob    <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+visibleAsk_prob     <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
+
+g1 <-
+  tibble(condition = factor(c('Visible\n ','Hidden\n '), 
+                            levels = c('Visible\n ','Hidden\n ')),
+         median    = c(median(visibleAskGive_prob), median(hidden_prob)),
+         pi.025     = c(quantile(visibleAskGive_prob, .025), quantile(hidden_prob, .025)),
+         pi.250     = c(quantile(visibleAskGive_prob, .250), quantile(hidden_prob, .250)),
+         pi.750     = c(quantile(visibleAskGive_prob, .750), quantile(hidden_prob, .750)),
+         pi.975     = c(quantile(visibleAskGive_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 3.94")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of requesting when above threshold',
+       x = 'Condition',
+       title = ' ') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+post <- posterior_samples(b3.6)
+hidden_prob         <- inv_logit_scaled(post$b_intercept)
+visibleGive_prob    <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
+visibleAsk_prob     <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
+visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
+                                          post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
+
+g2 <-
+  tibble(condition = factor(c('Visible\n ','Hidden\n '), 
+                            levels = c('Visible\n ','Hidden\n ')),
+         median    = c(median(visibleAskGive_prob), median(hidden_prob)),
+         pi.025    = c(quantile(visibleAskGive_prob, .025), quantile(hidden_prob, .025)),
+         pi.250    = c(quantile(visibleAskGive_prob, .250), quantile(hidden_prob, .250)),
+         pi.750    = c(quantile(visibleAskGive_prob, .750), quantile(hidden_prob, .750)),
+         pi.975    = c(quantile(visibleAskGive_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 14.40")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of not fulfilling request when able',
+       x = 'Condition',
+       title = ' ') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+g3 <-
+  tibble(condition = factor(c("Asker resources\nhidden","Asker resources\nvisible"), 
+                            levels = c("Asker resources\nhidden","Asker resources\nvisible")),
+         median    = c(median(hidden_prob), median(visibleAsk_prob)),
+         pi.025    = c(quantile(hidden_prob, .025), quantile(visibleAsk_prob, .025)),
+         pi.250    = c(quantile(hidden_prob, .250), quantile(visibleAsk_prob, .250)),
+         pi.750    = c(quantile(hidden_prob, .750), quantile(visibleAsk_prob, .750)),
+         pi.975    = c(quantile(hidden_prob, .975), quantile(visibleAsk_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.96")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of not fulfilling request when able',
+       x = 'Condition',
+       title = "Giver resources hidden") +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 12))
+
+# add a, b, and c labels
+g1 <- arrangeGrob(g1, 
+                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+g2 <- arrangeGrob(g2, 
+                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+g3 <- arrangeGrob(g3, 
+                  top=textGrob("c", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+# save to working directory
+ggsave('figures/fig3.1.pdf', width = 9, height = 4,
+       plot = grid.arrange(g1, g2, g3, nrow = 1, widths = c(1, 1, 1)))
+
+# finished plot!
+grid.arrange(g1, g2, g3, nrow = 1, widths = c(1, 1, 1))
+```
+
+```{r echo=F}
+# cleanup
+rm(g1, g2, g3, post, hidden_prob, visibleAsk_prob,
+   visibleAskGive_prob, visibleGive_prob)
+```
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

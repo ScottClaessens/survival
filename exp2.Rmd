@@ -1,0 +1,961 @@
+---
+title: "Hidden vs Visible Resources in the Survival Game (Study 2)"
+author: Scott Claessens
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
+# 0. Setup
+
+You'll need to download [Stan](http://mc-stan.org/) to your machine for these analyses. Note: this document will save **brms** model fits into your working directory.
+
+First, let's install all the packages we'll need.
+
+```{r message=FALSE, warning=FALSE}
+require(brms)
+require(brmstools)
+require(ggplot2)
+require(tidyverse)
+require(bayesplot)
+require(grid)
+require(gridExtra)
+```
+
+Now, read in the data from Study 2. 
+
+```{r}
+(
+  d <- 
+    read.csv('data/exp2data.csv', header = TRUE) %>%
+    as_tibble()
+)
+```
+
+Each row is a different participant in Study 2 (there were 80). Columns 1-68 are variables that summarise the whole session. Columns 69-493 refer to events in each round of the Visible condition. Columns 494-918 refer to the Hidden condition. This experiment followed a within-subjects design (i.e. participants completed both the Hidden and Visible conditions).
+
+# 1. Binomial - Number of shocks
+
+Trim the dataset and get it in long-format.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, ends_with('.rounds_survived'), ends_with('.overall_num_shocks')) %>%
+    gather(key, value, -ID) %>%
+    extract(key, c("Condition", "variable"), 
+            "(hidden|visible).(rounds_survived|overall_num_shocks)") %>%
+    spread(variable, value) %>%
+    mutate(Condition = ifelse(Condition == 'hidden', 1, 0))
+)
+```
+
+As in Study 1, we first test whether the probability of a shock occurring differs between the two conditions. Although this experiment followed a within-subjects design, random effects are not necessary here because the occurrence of shocks are independent between the two conditions.
+
+All analyses in this document will use the `brm()` function. Learn more about the **brms** package [here](https://github.com/paul-buerkner/brms). Also, see [here](https://bookdown.org/content/1850/horoscopes-insights.html#use-the-0-intercept-syntax) for an explanation of why I use the `0 + intercept` syntax throughout this document.
+
+```{r eval=F}
+b2.1 <-
+  brm(data = d.trim, family = binomial,
+      overall_num_shocks | trials(rounds_survived) ~ 0 + intercept + Condition,
+      prior = c(prior(normal(0, 1), class = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b2.1, file = "models/exp2_brmsfit1.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit1.rda")
+```
+
+We set the `seed` to a random number, to make the results reproducible. Here are the priors that were set for this model.
+
+```{r}
+prior_summary(b2.1)
+```
+
+Let's look at the results.
+
+```{r}
+print(b2.1)
+```
+
+Plotting the parameters.
+
+```{r fig.height = 2, fig.width = 7}
+stanplot(b2.1)
+```
+
+The Condition parameter is -0.03, and its 95% credible intervals cross 0, implying that the probability of a shock is no different across the two conditions. On the probability scale:
+
+```{r}
+post <- posterior_samples(b2.1)
+
+visible_prob <- inv_logit_scaled(post$b_intercept)
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+difference   <- hidden_prob - visible_prob
+
+quantile(difference,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+```{r echo=F}
+# cleanup
+rm(d.trim, post, difference,
+   hidden_prob, visible_prob)
+```
+
+# 2. Gaussian - Total amount of cattle lost due to shocks
+
+Trim the dataset again.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(hidden.total_cattle_lost, visible.total_cattle_lost) %>%
+    gather(Condition, total_cattle_lost) %>%
+    mutate(Condition = ifelse(Condition == 'hidden.total_cattle_lost', 1, 0))
+)
+```
+
+We now fit a model to determine if the total amount of cattle lost due to shocks varies between conditions. Again, no random effects are needed because the outcome is independent across conditions (generated stochastically by the game), despite the within-subject design.
+
+```{r eval=F}
+b2.2 <-
+  brm(data = d.trim, family = gaussian,
+      total_cattle_lost ~ 0 + intercept + Condition,
+      prior = c(prior(normal(0, 100), class = b, coef = 'intercept'),
+                prior(normal(0, 5), class = b, coef = 'Condition')),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b2.2, file = "models/exp2_brmsfit2.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit2.rda")
+```
+
+The priors we used.
+
+```{r}
+prior_summary(b2.2)
+```
+
+The results.
+
+```{r}
+print(b2.2)
+```
+
+Plot the parameters.
+
+```{r fig.height=2, fig.width=7}
+stanplot(b2.2)
+```
+
+On average, 7 more cattle were lost in the Hidden condition than the Visible condition.
+
+# 3. Binomial - Probability of requesting
+
+## 3.1. Fitting the model
+
+Get a long-format data frame with binary request decisions over all rounds, for both conditions. If request == NA, player has died and been removed from the game, so we drop those rows.
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, ends_with('.player.request')) %>%
+    gather(key, request, -ID, -Group) %>%
+    extract(key, c("Condition", "round_number"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.]request") %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number)) %>%
+    drop_na()
+)
+```
+
+This leaves us with 2834 request decisions.
+
+We now fit a varying intercept and slope model, with participants nested within groups. We allow the slopes for both round number *and* condition to vary, to fit with the experiment's within-subjects design (participants completed multiple rounds, in both conditions).
+
+```{r eval=F}
+b2.3 <-
+  brm(data = d.trim, family = bernoulli,
+      request ~ 0 + intercept + round_number + Condition
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.99),
+      seed = 2113)
+
+save(b2.3, file = "models/exp2_brmsfit3.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit3.rda")
+```
+
+Here are the priors for the model we just fitted.
+
+```{r}
+prior_summary(b2.3)
+```
+
+Now let's see the results.
+
+```{r}
+print(b2.3)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b2.3)
+```
+
+Do those Rhat values look okay? Larger than 1.1 is deemed an issue.
+
+```{r}
+rhat(b2.3) %>%
+  mcmc_rhat()
+```
+
+How about nEff ratios? Above 0.1 is desired.
+
+```{r}
+neff_ratio(b2.3) %>%
+  mcmc_neff()
+```
+
+Only a few parameters are below the threshold.
+
+Finally, let's see the trace plots.
+
+```{r}
+plot(b2.3, ask = F)
+```
+
+Looks like Stan sampled efficiently.
+
+In this model, the fixed effect of condition is 0.62, with 95% credible intervals above 0. This implies that the participants are more likely to request from their partner in the Hidden condition. Converting to the probability scale:
+
+```{r}
+post <- posterior_samples(b2.3)
+
+visible_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference <- hidden_prob - visible_prob
+
+quantile(difference,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+The absolute probability difference between the conditions is +0.14 (median), with 95% CIs above 0. Participants were more likely to request from their partner in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities. This is the inverse of the alternative hypothesis that the two conditions are equal.
+
+```{r}
+(1 / hypothesis(b2.3, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies weak support for the hypothesis that the probabilities differ across conditions.
+
+How much variance in the outcome does this model explain? We use the `bayes_R2()` function to get a Bayesian estimate of R-squared.
+
+```{r}
+bayes_R2(b2.3) %>% round(2)
+```
+
+This model explains around 27% of the variance.
+
+## 3.2. Plotting the results
+
+```{r echo=F, fig.height = 4, fig.width = 8}
+g1 <-
+  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
+         median    = c(median(visible_prob), median(hidden_prob)),
+         pi.025     = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
+         pi.250     = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
+         pi.750     = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
+         pi.975     = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 2.39")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of requesting',
+       x = 'Condition') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+g2 <-
+  d.trim %>%
+  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
+  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
+         round_number = factor(round_number)) %>%
+  group_by(Condition, round_number) %>% 
+  summarise(n = n(), sum = sum(request)) %>%
+  mutate(prop = sum / n) %>%
+  
+  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
+  geom_line() + 
+  geom_point() + 
+  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
+  ylab('Proportion of players requesting') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+# add a and b labels
+g1 <- arrangeGrob(g1, 
+                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+g2 <- arrangeGrob(g2, 
+                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+# finished plot!
+grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
+
+# print and save to working directory
+ggsave('figures/fig2.1.pdf', width = 8, height = 4,
+       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
+
+```
+
+```{r echo=F}
+# cleanup
+rm(d.trim, g1, g2, post, difference,
+   hidden_prob, visible_prob)
+```
+
+# 4. Binomial - Probability of requesting when above the minimum threshold
+
+## 4.1. Fitting the model
+
+Get a long-format data frame with binary request decisions over all rounds, for both conditions. If request == NA, player has died and been removed from the game, so we drop those rows. However, we also filter out rows in which the player was below the minimum survival threshold (64 cattle).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request')) %>%
+    gather(key, value, -ID, -Group) %>%
+    extract(key, c("Condition", "round_number", "variable"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](request|herd_size_after_shock)") %>%
+    spread(variable, value) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>%
+    filter(herd_size_after_shock >= 64)
+)
+```
+
+This leaves us with 2368 request decisions.
+
+We now fit a varying intercept and slope model, with participants nested within groups. Again, we allow the slopes for both round number *and* condition to vary.
+
+```{r eval=F}
+b2.4 <-
+  brm(data = d.trim, family = bernoulli,
+      request ~ 0 + intercept + round_number + Condition
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.99),
+      seed = 2113)
+
+save(b2.4, file = "models/exp2_brmsfit4.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit4.rda")
+```
+
+The priors.
+
+```{r}
+prior_summary(b2.4)
+```
+
+The results.
+
+```{r}
+print(b2.4)
+```
+
+Creating a forest plot of parameters.
+
+```{r}
+stanplot(b2.4)
+```
+
+Viusalise Rhat values.
+
+```{r}
+rhat(b2.4) %>%
+  mcmc_rhat()
+```
+
+Viusalise nEff ratios.
+
+```{r}
+neff_ratio(b2.4) %>%
+  mcmc_neff()
+```
+
+Trace plots.
+
+```{r}
+plot(b2.4, ask = F)
+```
+
+Looks like Stan sampled efficiently.
+
+In this model, the fixed effect of condition is 0.18, with 95% credible intervals crossing 0. This implies that, at least when above the minimum survival threshold, the average probability of requesting did not differ between conditions.
+
+Let's look at the variation in the effect of condition, at the group-level.
+
+```{r fig.height=9, fig.width=7}
+brmstools::forest(b2.4, pars = 'Condition', grouping = 'Group') +
+    geom_vline(aes(xintercept = 0), linetype = 2)
+```
+
+Converting the fixed effects to the probability scale:
+
+```{r}
+post <- posterior_samples(b2.4)
+
+visible_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference <- hidden_prob - visible_prob
+
+quantile(difference,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+The absolute probability difference between the conditions is +0.02 (median), with 95% CIs above 0. Participants were no more likely to request from their partner in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.4, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities are equal in each condition.
+
+How much variance in the outcome does this model explain?
+
+```{r}
+bayes_R2(b2.4) %>% round(2)
+```
+
+This model explains around 43% of the variance.
+
+## 4.2. Plotting the results
+
+```{r echo=F, fig.height = 4, fig.width = 8}
+g1 <-
+  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
+         median    = c(median(visible_prob), median(hidden_prob)),
+         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
+         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
+         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
+         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() +
+  geom_point() +
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.32")) +
+  ylim(0,1) +
+  labs(y = 'Median predicted probability\n of requesting when above threshold',
+       x = 'Condition') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+g2 <-
+  d.trim %>%
+  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
+  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
+         round_number = factor(round_number)) %>%
+  group_by(Condition, round_number) %>%
+  summarise(n = n(), sum = sum(request)) %>%
+  mutate(prop = sum / n) %>%
+
+  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
+  geom_line() +
+  geom_point() +
+  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
+  ylab('Proportion of players requesting\nwhen above threshold') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+# add a and b labels
+g1 <- arrangeGrob(g1,
+                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"),
+                               gp = gpar(fontface='bold', fontsize=14)))
+g2 <- arrangeGrob(g2,
+                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"),
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+# finished plot!
+grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
+
+# print and save to working directory
+ggsave('figures/fig2.2.pdf', width = 8, height = 4,
+       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
+```
+
+```{r echo=F}
+# cleanup
+rm(d.trim, g1, g2, post, difference,
+   hidden_prob, visible_prob)
+```
+
+# 5. Binomial - Probability of not responding to a request
+
+## 5.1. Fitting the model
+
+Get long-format data frame with 'received' variable (i.e. how much a player received on any given round). We swap this around so it reflects how much the player *gave* to their partner (i.e. how much their partner received). We drop rows with NAs, since partners did not request help in that particular round. We then code whether the player gave nothing in response to the request (1) or gave at least one cattle (0).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    select(ID, Group, ends_with('.player.received')) %>%
+    # swap every other value to get what the player GAVE, rather than what they RECEIVED
+    # swapping works because each player is next to their partner in the data frame
+    mutate_at(vars(ends_with(".player.received")), function(x) x[1:nrow(d) + c(1,-1)]) %>%
+    gather(key, received, -ID, -Group) %>%
+    extract(key, c("Condition", "round_number"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.]received") %>%
+    rename(responded    = received) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number),
+           notResponded = ifelse(responded > 0, 0, 1) %>% as.integer()) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na()
+)
+```
+
+This leaves us with 716 possible responses to requests.
+
+We then fit the varying intercept and slope model, again with participants nested within groups.
+
+```{r eval=F}
+b2.5 <-
+  brm(data = d.trim, family = bernoulli,
+      notResponded ~ 0 + intercept + round_number + Condition
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      iter = 2500, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.99),
+      seed = 2113)
+
+save(b2.5, file = "models/exp2_brmsfit5.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit5.rda")
+```
+
+The priors we used.
+
+```{r}
+prior_summary(b2.5)
+```
+
+The results.
+
+```{r}
+print(b2.5)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b2.5)
+```
+
+Let's look at the trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b2.5, ask = F)
+```
+
+Rhat values, n_eff values, and trace plots look okay.
+
+The fixed effect of condition is 0.49, with 95% credible intervals that cross 0. This implies that participants were no more likely to not respond to requests in the Hidden condition.
+
+As before, we sample from the posterior and convert this difference to the absolute probability scale.
+
+```{r}
+post <- posterior_samples(b2.5)
+
+visible_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference <- hidden_prob - visible_prob
+
+quantile(difference,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+The probability difference between the conditions is 0.07 (median), with 95% CIs crossing 0.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.5, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies anecdotal support for the hypothesis that the probabilities are equal across conditions.
+
+```{r}
+bayes_R2(b2.5) %>% round(2)
+```
+
+`bayes_R2()` tells us that this model explains around 24% of the variance in the outcome.
+
+## 5.2. Plotting the results
+
+```{r echo=F, fig.height = 4, fig.width = 8}
+g1 <-
+  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
+         median    = c(median(visible_prob), median(hidden_prob)),
+         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
+         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
+         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
+         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.67")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of not responding to a request',
+       x = 'Condition') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+g2 <-
+  d.trim %>%
+  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
+  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
+         round_number = factor(round_number)) %>%
+  group_by(Condition, round_number) %>% 
+  summarise(n = n(), sum = sum(notResponded)) %>%
+  mutate(prop = sum / n) %>%
+  
+  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
+  geom_line() + 
+  geom_point() + 
+  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
+  ylab('Proportion of players\nnot responding to requests') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+# add a and b labels
+g1 <- arrangeGrob(g1, 
+                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+g2 <- arrangeGrob(g2, 
+                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+# finished plot!
+grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
+
+# print and save to working directory
+ggsave('figures/fig2.3.pdf', width = 8, height = 4,
+       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
+```
+
+```{r echo=F}
+# cleanup
+rm(d.trim, g1, g2, post, difference,
+   hidden_prob, visible_prob)
+```
+
+# 6. Binomial - Probability of fulfilling a request when able
+
+## 6.1. Fitting the model
+
+Again, the data wrangling for this model is a little trickier.
+
+1. First, we get a long-format data frame with (a) the player's herd size that round, (b) how much the player received that round, and (c) how much the player requested that round.
+2. Next, we flip the latter two variables to get (b') how much the *player gave*, and (c') how much the *player's partner requested*. 'Flipping' is possible because partners sit next to the focal player in the data frame.
+3. We drop rows with NAs, as no requesting happened this round.
+4. We keep only rows in which the partner's request could be fulfilled without dropping the player below the minimum survival threshold (i.e. the player was *able* to give).
+5. Finally, we code whether the player fulfilled the request by giving what was asked or more (0) or did not fulfill the request (1).
+
+```{r}
+(
+  d.trim <-
+    d %>%
+    # 1. select herd size, received, and requested
+    select(ID, Group, ends_with('.player.herd_size_after_shock'),
+           ends_with('.player.received'),
+           ends_with('.player.request_amount')) %>%
+    # 2a. flip the variables to get what the player gave and what their partner requested
+    mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+              function(x) x[1:nrow(d) + c(1,-1)]) %>%
+    gather(key, value, -ID, -Group) %>%
+    extract(key, c("Condition", "round_number", "variable"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](herd_size_after_shock|received|request_amount)") %>%
+    spread(variable, value) %>%
+    # 2b. rename the variables to match their new meaning
+    rename(gave              = received,
+           partner_requested = request_amount) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    # 3. drop NAs, as no requesting happened
+    drop_na() %>%
+    # 4. was the player able to give?
+    filter(herd_size_after_shock - partner_requested >= 64) %>%
+    # 5. code 0 = request fulfilled, 1 = request not fulfilled
+    mutate(notFulfilled = ifelse(gave >= partner_requested, 0, 1) %>% as.integer())
+)
+```
+
+This leaves us with 473 possible response decisions in which the player was able to give their partner what they asked for. Our outcome variable is whether they fulfilled that request or not.
+
+We now fit the varying intercept and slope model, again with participants nested within groups.
+
+```{r eval=F}
+b2.6 <-
+  brm(data = d.trim, family = bernoulli,
+      notFulfilled ~ 0 + intercept + round_number + Condition
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE,
+      iter = 2500, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b2.6, file = "models/exp2_brmsfit6.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit6.rda")
+```
+
+Here are the priors we used for model `b2.6`.
+
+```{r}
+prior_summary(b2.6)
+```
+
+Let's see the results.
+
+```{r}
+print(b2.6)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b2.6)
+```
+
+Let's look at the trace plots to make sure Stan sampled efficiently.
+
+```{r}
+plot(b2.6, ask = F)
+```
+
+Stan sampled efficiently.
+
+The fixed effect of condition is 0.95, with 95% credible intervals above 0. This implies that participants were more likely to not fulfill requests (when able) in the Hidden condition. 
+
+On the absolute probability scale.
+
+```{r}
+post <- posterior_samples(b2.6)
+
+visible_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference <- hidden_prob - visible_prob
+
+quantile(difference,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+The probability difference between the conditions is 0.23 (median), with 95% CIs above zero.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.6, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities differ across conditions.
+
+```{r}
+bayes_R2(b2.6) %>% round(2)
+```
+
+This model explains around 44% of the variance in the outcome.
+
+## 6.2. Plotting the results
+
+```{r echo=F, fig.height = 4, fig.width = 8}
+g1 <-
+  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
+         median    = c(median(visible_prob), median(hidden_prob)),
+         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
+         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
+         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
+         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 9.78")) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability\n of not fulfilling request when able',
+       x = 'Condition') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+g2 <-
+  d.trim %>%
+  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
+  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
+         round_number = factor(round_number)) %>%
+  group_by(Condition, round_number) %>% 
+  summarise(n = n(), sum = sum(notFulfilled)) %>%
+  mutate(prop = sum / n) %>%
+  
+  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
+  geom_line() + 
+  geom_point() + 
+  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
+  ylab('Proportion of players\nnot fulfilling requests when able') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank())
+
+# add a and b labels
+g1 <- arrangeGrob(g1, 
+                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+g2 <- arrangeGrob(g2, 
+                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
+                               just = c("left","top"), 
+                               gp = gpar(fontface='bold', fontsize=14)))
+
+# finished plot!
+grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
+
+# print and save to working directory
+ggsave('figures/fig2.4.pdf', width = 8, height = 4,
+       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
+```
+
+```{r echo=F}
+# cleanup
+rm(d.trim, g1, g2, post, difference,
+   visible_prob, hidden_prob)
+```
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
