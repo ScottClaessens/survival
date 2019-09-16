@@ -626,7 +626,7 @@ rm(d.trim, post, difference,
 
 # 7. Plotting
 
-```{r echo=F, fig.height = 6, fig.width = 9.5}
+```{r echo=F, fig.height = 3, fig.width = 9.5}
 # prepare for gA
 post <- posterior_samples(b4.6)
 visible_prob <- inv_logit_scaled(post$b_intercept)
