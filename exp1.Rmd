@@ -18,14 +18,15 @@ options(width = 120)
 
 You'll need to download [Stan](http://mc-stan.org/) to your machine for these analyses. Note: this document will save **brms** model fits into your working directory.
 
-First, let's install all the packages we'll need.
+First, let's load all the packages we'll need.
 
 ```{r message=FALSE, warning=FALSE}
-require(brms)
-require(ggplot2)
-require(tidyverse)
-require(grid)
-require(gridExtra)
+library(brms)
+library(cowplot)
+library(ggplot2)
+library(grid)
+library(png)
+library(tidyverse)
 ```
 
 Now, read in the data from Study 1. 
@@ -168,8 +169,6 @@ rm(d.trim)
 
 # 3. Binomial - Probability of requesting
 
-## 3.1. Fitting the model
-
 Get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows.
 
 ```{r}
@@ -275,74 +274,13 @@ bayes_R2(b1.3) %>% round(2)
 
 This model explains around 30% of the variance.
 
-## 3.2. Plotting the results
-
-```{r echo=F, fig.height = 4, fig.width = 8}
-g1 <-
-  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
-         median    = c(median(visible_prob), median(hidden_prob)),
-         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
-         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
-  
-  ggplot(aes(x = condition, y = median, group = 1)) +
-  geom_line() + 
-  geom_point() + 
-  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 6.00")) +
-  ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of requesting',
-       x = 'Condition') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-g2 <-
-  d.trim %>%
-  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
-  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
-         round_number = factor(round_number)) %>%
-  group_by(Condition, round_number) %>% 
-  summarise(n = n(), sum = sum(request)) %>%
-  mutate(prop = sum / n) %>%
-  
-  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
-  geom_line() + 
-  geom_point() + 
-  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
-  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
-  ylab('Proportion of players requesting') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-# add a and b labels
-g1 <- arrangeGrob(g1, 
-                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-g2 <- arrangeGrob(g2, 
-                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-
-# finished plot!
-grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
-
-# print and save to working directory
-ggsave('figures/fig1.1.pdf', width = 8, height = 4,
-       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
-```
-
 ```{r echo=F}
 # cleanup
-rm(d.trim, g1, g2, post, difference, 
+rm(d.trim, post, difference, 
    hidden_prob, visible_prob)
 ```
 
 # 4. Binomial - Probability of requesting when above the minimum threshold
-
-## 4.1. Fitting the model
 
 As before, get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows. However, we also filter out rows in which the player was below the minimum survival threshold (64 cattle).
 
@@ -455,74 +393,13 @@ bayes_R2(b1.4) %>% round(2)
 
 This model explains around 35% of the variance in the outcome.
 
-## 4.2. Plotting the results
-
-```{r echo=F, fig.height = 4, fig.width = 8}
-g1 <-
-  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
-         median    = c(median(visible_prob), median(hidden_prob)),
-         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
-         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
-  
-  ggplot(aes(x = condition, y = median, group = 1)) +
-  geom_line() + 
-  geom_point() + 
-  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 11.86")) +
-  ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of requesting when above threshold',
-       x = 'Condition') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-g2 <-
-  d.trim %>%
-  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
-  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
-         round_number = factor(round_number)) %>%
-  group_by(Condition, round_number) %>% 
-  summarise(n = n(), sum = sum(request)) %>%
-  mutate(prop = sum / n) %>%
-  
-  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
-  geom_line() + 
-  geom_point() + 
-  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
-  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
-  ylab('Proportion of players requesting\nwhen above threshold') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-# add a and b labels
-g1 <- arrangeGrob(g1, 
-                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-g2 <- arrangeGrob(g2, 
-                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-
-# finished plot!
-grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
-
-# print and save to working directory
-ggsave('figures/fig1.2.pdf', width = 8, height = 4,
-       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
-```
-
 ```{r echo=F}
 # cleanup
-rm(d.trim, g1, g2, post, difference,
+rm(d.trim, post, difference,
    hidden_prob, visible_prob)
 ```
 
 # 5. Binomial - Probability of not responding to a request
-
-## 5.1. Fitting the model
 
 Get long-format data frame with 'received' variable (i.e. how much a player received on any given round). We swap this around so it reflects how much the player *gave* to their partner (i.e. how much their partner received). We drop rows with NAs, since partners did not request help in that particular round. We then code whether the player gave nothing in response to the request (1) or gave at least one cattle (0).
 
@@ -635,75 +512,13 @@ bayes_R2(b1.5) %>% round(2)
 
 Finally, `bayes_R2()` tells us that this model explains around 58% of the variance in the outcome.
 
-## 5.2. Plotting the results
-
-```{r echo=F, fig.height = 4, fig.width = 8}
-g1 <-
-  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
-         median    = c(median(visible_prob), median(hidden_prob)),
-         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
-         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
-  
-  ggplot(aes(x = condition, y = median, group = 1)) +
-  geom_line() + 
-  geom_point() + 
-  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 3.28")) +
-  ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of not responding to a request',
-       x = 'Condition') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-g2 <-
-  d.trim %>%
-  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
-  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
-         round_number = factor(round_number)) %>%
-  group_by(Condition, round_number) %>% 
-  summarise(n = n(), sum = sum(notResponded)) %>%
-  mutate(prop = sum / n) %>%
-  
-  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
-  geom_line() + 
-  geom_point() + 
-  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
-  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
-  ylab('Proportion of players\nnot responding to requests') +
-  theme_classic() +
-  theme(panel.grid.major.x = element_blank())
-
-# add a and b labels
-g1 <- arrangeGrob(g1, 
-                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-g2 <- arrangeGrob(g2, 
-                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-
-# finished plot!
-grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
-
-# print and save to working directory
-ggsave('figures/fig1.3.pdf', width = 8, height = 4,
-       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
-```
-
 ```{r echo=F}
 # cleanup
-rm(d.trim, g1, g2, post, difference,
+rm(d.trim, post, difference,
    hidden_prob, visible_prob)
 ```
 
-
 # 6. Binomial - Probability of not fulfilling a request when able
-
-## 6.1. Fitting the model
 
 The data wrangling for this model is a little trickier.
 
@@ -836,10 +651,101 @@ bayes_R2(b1.6) %>% round(2)
 
 This model explains around 58% of the variance in the outcome.
 
-## 6.2. Plotting the results
+```{r echo=F}
+# cleanup
+rm(d.trim, post, difference,
+   hidden_prob, visible_prob)
+```
 
-```{r echo=F, fig.height = 4, fig.width = 8}
-g1 <-
+# 7. Plotting
+
+```{r echo=F, fig.height = 6, fig.width = 9.5}
+# prepare for gA
+post <- posterior_samples(b1.4)
+visible_prob <- inv_logit_scaled(post$b_intercept)
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+gA <-
+  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
+         median    = c(median(visible_prob), median(hidden_prob)),
+         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
+         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
+         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
+         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  
+  ggplot(aes(x = condition, y = median, group = 1)) +
+  geom_line() + 
+  geom_point() + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
+  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 11.86"), size = 3.5) +
+  ylim(0,1) + 
+  labs(y = 'Median predicted probability of\nrequesting when above threshold',
+       x = 'Condition') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8))
+
+# prepare for gB and gC
+d.plot <-
+  d %>%
+  select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'), 
+         ends_with('.player.request')) %>%
+  gather(key, value, -ID, -Group, -Condition) %>%
+  extract(key, c("round_number", "variable"), 
+          "SurvivalGame.(.|..).player.(herd_size_after_shock|request)") %>%
+  spread(variable, value) %>%
+  mutate(round_number = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  mutate(above        = ifelse(herd_size_after_shock >= 64 & !is.na(request), 1, 0),
+         requestAbove = ifelse(request == 1 & herd_size_after_shock >= 64, 1, 0),
+         requestAbove = ifelse(is.na(request), NA, requestAbove)) %>%
+  group_by(Condition, round_number) %>%
+  summarise(alive        = sum(!is.na(herd_size_after_shock)) / n(),
+            above        = sum(above, na.rm = T) / n(),
+            request      = sum(request, na.rm = T) / n(),
+            requestAbove = sum(requestAbove, na.rm = T) / n())
+
+gB <-
+  d.plot %>%
+  filter(Condition == 0) %>%
+  ggplot(aes(x = round_number)) +
+  geom_line(aes(y = alive), colour = "steelblue") + 
+  geom_point(aes(y = alive), colour = "steelblue") +
+  geom_bar(aes(y = above), stat = "identity", fill = "steelblue", alpha = 0.075, width = 0.8) +
+  geom_bar(aes(y = requestAbove), stat = "identity", fill = "steelblue", width = 0.8) +
+  scale_x_continuous('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
+  ylab('Proportion of players\nrequesting when above threshold') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8))
+
+gC <-
+  d.plot %>%
+  filter(Condition == 1) %>%
+  ggplot(aes(x = round_number)) +
+  geom_line(aes(y = alive), colour = "firebrick2") + 
+  geom_point(aes(y = alive), colour = "firebrick2") +
+  geom_bar(aes(y = above), stat = "identity", fill = "firebrick2", alpha = 0.075, width = 0.8) +
+  geom_bar(aes(y = requestAbove), stat = "identity", fill = "firebrick2", width = 0.8) +
+  scale_x_continuous('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1), position = "right") +
+  ylab('Proportion of players alive') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        axis.title.y.right = element_text(margin = margin(0, 0, 0, 6)))
+
+# prepare for gD
+post <- posterior_samples(b1.6)
+visible_prob <- inv_logit_scaled(post$b_intercept)
+hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+gD <-
   tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
          median    = c(median(visible_prob), median(hidden_prob)),
          pi.025     = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
@@ -852,53 +758,108 @@ g1 <-
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
   geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 2.79")) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 2.79"), size = 3.5) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of not fulfilling requests when able',
+  labs(y = 'Median predicted probability of\nnot fulfilling requests when able',
        x = 'Condition') +
   theme_classic() +
-  theme(panel.grid.major.x = element_blank())
+  theme(panel.grid.major.x = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10))
 
-g2 <-
-  d.trim %>%
-  mutate(Condition    = ifelse(Condition == 1, 'Hidden', 'Visible')) %>%
-  mutate(Condition    = factor(Condition, levels = c('Visible', 'Hidden')),
-         round_number = factor(round_number)) %>%
-  group_by(Condition, round_number) %>% 
-  summarise(n = n(), sum = sum(notFulfilled)) %>%
-  mutate(prop = sum / n) %>%
-  
-  ggplot(aes(., x = round_number, y = prop, colour = Condition, group = Condition)) +
-  geom_line() + 
-  geom_point() + 
-  scale_x_discrete('Round number', c(5, 10, 15, 20, 25)) +
+# prepare for gE and gF
+d.plot <-
+  d %>%
+  select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'),
+         ends_with('.player.received'),
+         ends_with('.player.request_amount')) %>%
+  mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+            function(x) x[1:nrow(d) + c(1,-1)]) %>%
+  gather(key, value, -ID, -Group, -Condition) %>%
+  extract(key, c("round_number", "variable"), 
+          "SurvivalGame.(.|..).player.(herd_size_after_shock|received|request_amount)") %>%
+  spread(variable, value) %>%
+  rename(gave              = received,
+         partner_requested = request_amount) %>%
+  mutate(round_number      = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  mutate(requested = ifelse(is.na(partner_requested), 0, 1),
+         ableToFulfill = ifelse(herd_size_after_shock - partner_requested >= 64, 1, 0),
+         noFulfillWhenAble = ifelse(herd_size_after_shock - partner_requested >= 64,
+                                    ifelse(gave < partner_requested, 1, 0), 0)) %>%
+  group_by(Condition, round_number) %>%
+  summarise(alive          = sum(!is.na(herd_size_after_shock)) / n(),
+            requested      = sum(requested, na.rm = T) / n(),
+            ableToFulfill  = sum(ableToFulfill, na.rm = T) / n(),
+            noFulfillWhenAble = sum(noFulfillWhenAble, na.rm = T) / n())
+
+gE <-
+  d.plot %>%
+  filter(Condition == 0) %>%
+  ggplot(aes(x = round_number)) +
+  geom_line(aes(y = alive), colour = "steelblue") + 
+  geom_point(aes(y = alive), colour = "steelblue") +
+  geom_bar(aes(y = ableToFulfill), stat = "identity", 
+           fill = "steelblue", alpha = 0.075, width = 0.8) +
+  geom_bar(aes(y = noFulfillWhenAble), stat = "identity", 
+           fill = "steelblue", width = 0.8) +
+  scale_x_continuous('Round number', c(5, 10, 15, 20, 25)) +
   scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1)) +
   ylab('Proportion of players\nnot fulfilling requests when able') +
   theme_classic() +
-  theme(panel.grid.major.x = element_blank())
+  theme(panel.grid.major.x = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10))
 
-# add a and b labels
-g1 <- arrangeGrob(g1, 
-                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-g2 <- arrangeGrob(g2, 
-                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
+gF <-
+  d.plot %>%
+  filter(Condition == 1) %>%
+  ggplot(aes(x = round_number)) +
+  geom_line(aes(y = alive), colour = "firebrick2") + 
+  geom_point(aes(y = alive), colour = "firebrick2") +
+  geom_bar(aes(y = ableToFulfill), stat = "identity", 
+           fill = "firebrick2", alpha = 0.075, width = 0.8) +
+  geom_bar(aes(y = noFulfillWhenAble), stat = "identity", 
+           fill = "firebrick2", width = 0.8) +
+  scale_x_continuous('Round number', c(5, 10, 15, 20, 25)) +
+  scale_y_continuous(breaks = c(seq(0, 1, 0.25)), limits = c(0, 1), position = "right") +
+  ylab('Proportion of players alive') +
+  theme_classic() +
+  theme(panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        axis.title.y.right = element_text(margin = margin(0, 0, 0, 6)))
 
+# create manual legend
+legend <- get_legend(
+  tibble(Condition = factor(c("Visible","Hidden"),
+                            levels = c(c("Visible","Hidden"))),
+         Value = c(1, 1)) %>%
+  ggplot(aes(y = Condition, x = Value, fill = Condition)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = c("steelblue", "firebrick2")) +
+    theme(legend.box.margin = margin(0, 0, 25, 0),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10))
+)
+  
 # finished plot!
-grid.arrange(g1, g2, nrow = 1, widths = c(1, 2))
+top <- plot_grid(gA, NULL, gB, gC, nrow = 1, 
+                 labels = c("a","","b",""), 
+                 rel_widths = c(0.7, 0.1, 1, 1))
+bottom <- plot_grid(gD, NULL, gE, gF, nrow = 1, 
+                 labels = c("c","","d",""), 
+                 rel_widths = c(0.7, 0.1, 1, 1))
+g <- plot_grid(top, NULL, bottom, ncol = 1, rel_heights = c(1, 0.075, 1))
+g <- plot_grid(g, legend, nrow = 1, rel_widths = c(1, 0.1))
+g
 
-# print and save to working directory
-ggsave('figures/fig1.4.pdf', width = 8, height = 4,
-       plot = grid.arrange(g1, g2, nrow = 1, widths = c(1, 2)))
-```
+# save to working directory
+ggsave('figures/fig1.pdf', width = 9.5, height = 6)
 
-```{r echo=F}
 # cleanup
-rm(d.trim, g1, g2, post, difference,
-   hidden_prob, visible_prob)
+rm(gA, gB, gC, gD, gE, gF, d.plot, top, bottom,
+   legend, post, visible_prob, hidden_prob)
 ```
 
 # Session Info

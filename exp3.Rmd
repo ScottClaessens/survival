@@ -21,11 +21,10 @@ You'll need to download [Stan](http://mc-stan.org/) to your machine for these an
 First, let's install all the packages we'll need.
 
 ```{r message=FALSE, warning=FALSE}
-require(brms)
-require(ggplot2)
-require(tidyverse)
-require(grid)
-require(gridExtra)
+library(brms)
+library(cowplot)
+library(ggplot2)
+library(tidyverse)
 ```
 
 Now, read in the data from Study 3. 
@@ -143,8 +142,6 @@ stanplot(b3.2)
 The total amount of cattle lost does not seem to vary between conditions.
 
 # 3. Binomial - Probability of requesting
-
-## 3.1. Fitting the model
 
 Get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows.
 
@@ -301,8 +298,6 @@ rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
 ```
 
 # 4. Binomial - Probability of requesting when above the minimum threshold
-
-## 4.1. Fitting the model
 
 As before, get a long-format data frame with binary request decisions over all rounds. If request == NA, player has died and been removed from the game, so we drop those rows. However, we also filter out rows in which the player was below the minimum survival threshold (64 cattle).
 
@@ -464,8 +459,6 @@ rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
 
 # 5. Binomial - Probability of not responding to a request
 
-## 5.1. Fitting the model
-
 Get long-format data frame with 'received' variable (i.e. how much a player received on any given round). We swap this around so it reflects how much the player *gave* to their partner (i.e. how much their partner received). We drop rows with NAs, since partners did not request help in that particular round. We then code whether the player gave nothing in response to the request (1) or gave at least one cattle (0).
 
 ```{r}
@@ -626,8 +619,6 @@ rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
 
 
 # 6. Binomial - Probability of not fulfilling a request when able
-
-## 6.1. Fitting the model
 
 The data wrangling for this model is a little trickier.
 
@@ -803,9 +794,9 @@ rm(d.trim, post, diff1, diff2, diff3, diff4, diff5, diff6,
    hidden_prob, visibleAsk_prob, visibleAskGive_prob, visibleGive_prob)
 ```
 
-## 6.2. Plotting the results
+# 7. Plotting
 
-```{r echo=F}
+```{r echo=F, fig.height=4, fig.width=9}
 post <- posterior_samples(b3.4)
 hidden_prob         <- inv_logit_scaled(post$b_intercept)
 visibleGive_prob    <- inv_logit_scaled(post$b_intercept + post$b_VisibleGive)
@@ -813,7 +804,7 @@ visibleAsk_prob     <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
 visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
                                           post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
 
-g1 <-
+gA <-
   tibble(condition = factor(c('Visible\n ','Hidden\n '), 
                             levels = c('Visible\n ','Hidden\n ')),
          median    = c(median(visibleAskGive_prob), median(hidden_prob)),
@@ -827,13 +818,15 @@ g1 <-
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
   geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 3.94")) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 3.94"), size = 3.5) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of requesting when above threshold',
+  labs(y = 'Median predicted probability of\nrequesting when above threshold',
        x = 'Condition',
        title = ' ') +
   theme_classic() +
-  theme(panel.grid.major.x = element_blank())
+  theme(panel.grid.major.x = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10))
 
 post <- posterior_samples(b3.6)
 hidden_prob         <- inv_logit_scaled(post$b_intercept)
@@ -842,7 +835,7 @@ visibleAsk_prob     <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk)
 visibleAskGive_prob <- inv_logit_scaled(post$b_intercept + post$b_VisibleAsk + 
                                           post$b_VisibleGive + post$`b_VisibleAsk:VisibleGive`)
 
-g2 <-
+gB <-
   tibble(condition = factor(c('Visible\n ','Hidden\n '), 
                             levels = c('Visible\n ','Hidden\n ')),
          median    = c(median(visibleAskGive_prob), median(hidden_prob)),
@@ -856,15 +849,17 @@ g2 <-
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
   geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 14.40")) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 14.40"), size = 3.5) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of not fulfilling request when able',
+  labs(y = 'Median predicted probability of\nnot fulfilling request when able',
        x = 'Condition',
        title = ' ') +
   theme_classic() +
-  theme(panel.grid.major.x = element_blank())
+  theme(panel.grid.major.x = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10))
 
-g3 <-
+gC <-
   tibble(condition = factor(c("Asker resources\nhidden","Asker resources\nvisible"), 
                             levels = c("Asker resources\nhidden","Asker resources\nvisible")),
          median    = c(median(hidden_prob), median(visibleAsk_prob)),
@@ -878,41 +873,26 @@ g3 <-
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
   geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.96")) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.96"), size = 3.5) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability\n of not fulfilling request when able',
+  labs(y = 'Median predicted probability of\nnot fulfilling request when able',
        x = 'Condition',
        title = "Giver resources hidden") +
   theme_classic() +
   theme(panel.grid.major.x = element_blank(),
-        plot.title = element_text(size = 12))
-
-# add a, b, and c labels
-g1 <- arrangeGrob(g1, 
-                  top=textGrob("a", x = unit(0,"npc"), y = unit(1,"npc"), 
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-g2 <- arrangeGrob(g2, 
-                  top=textGrob("b", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-
-g3 <- arrangeGrob(g3, 
-                  top=textGrob("c", x = unit(0,"npc"), y = unit(1,"npc"),
-                               just = c("left","top"), 
-                               gp = gpar(fontface='bold', fontsize=14)))
-
-# save to working directory
-ggsave('figures/fig3.1.pdf', width = 9, height = 4,
-       plot = grid.arrange(g1, g2, g3, nrow = 1, widths = c(1, 1, 1)))
+        plot.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10))
 
 # finished plot!
-grid.arrange(g1, g2, g3, nrow = 1, widths = c(1, 1, 1))
-```
+g <- plot_grid(gA, gB, gC, nrow = 1, labels = letters[1:3])
+g
 
-```{r echo=F}
+# save to working directory
+ggsave('figures/fig3.pdf', width = 9, height = 4)
+
 # cleanup
-rm(g1, g2, g3, post, hidden_prob, visibleAsk_prob,
+rm(gA, gB, gC, post, hidden_prob, visibleAsk_prob,
    visibleAskGive_prob, visibleGive_prob)
 ```
 
