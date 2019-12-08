@@ -636,15 +636,12 @@ gA <-
   tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
          median    = c(median(visible_prob), median(hidden_prob)),
          pi.025     = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250     = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750     = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
          pi.975     = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
   
   ggplot(aes(x = condition, y = median, group = 1)) +
   geom_line() + 
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
   geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 2.06"), size = 3.5) +
   ylim(0,1) + 
   labs(y = 'Median predicted probability of\nnot fulfilling requests when able',

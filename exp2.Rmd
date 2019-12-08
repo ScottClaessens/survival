@@ -39,7 +39,7 @@ Now, read in the data from Study 2.
 )
 ```
 
-Each row is a different participant in Study 2 (there were 80). Columns 1-68 are variables that summarise the whole session. Columns 69-493 refer to events in each round of the Visible condition. Columns 494-918 refer to the Hidden condition. This experiment followed a within-subjects design (i.e. participants completed both the Hidden and Visible conditions).
+Each row is a different participant in Study 2 (there were 80). Columns 1-68 are variables that summarise the whole session. Columns 69-493 refer to events in each round of the Visible condition. Columns 494-918 refer to the Hidden condition. This experiment followed a within-subjects design (i.e. participants completed both the Hidden and Visible conditions). In the counterbalancing column, 0 means that the participant played the Visible game before the Hidden game, and 1 means that the participant played the Hidden game before the Visible game.
 
 # 1. Binomial - Number of shocks
 
@@ -307,9 +307,9 @@ Get a long-format data frame with binary request decisions over all rounds, for 
 (
   d.trim <-
     d %>%
-    select(ID, Group, ends_with('.player.herd_size_after_shock'), 
+    select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'), 
            ends_with('.player.request')) %>%
-    gather(key, value, -ID, -Group) %>%
+    gather(key, value, -ID, -Group, -Counterbalancing) %>%
     extract(key, c("Condition", "round_number", "variable"), 
             "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](request|herd_size_after_shock)") %>%
     spread(variable, value) %>%
@@ -337,6 +337,8 @@ b2.4 <-
       sample_prior = TRUE,
       control = list(adapt_delta = 0.99),
       seed = 2113)
+
+b2.4 <- add_criterion(b2.4, "loo")
 
 save(b2.4, file = "models/exp2_brmsfit4.rda")
 ```
@@ -433,8 +435,146 @@ This model explains around 43% of the variance.
 
 ```{r echo=F}
 # cleanup
-rm(d.trim, post, difference,
+rm(post, difference,
    hidden_prob, visible_prob)
+```
+
+# 4b. Binomial - Probability of requesting when above the minimum threshold (interacting with counterbalancing)
+
+We found no effect of condition in the previous model. Is this because of order effects?
+
+```{r eval=F}
+b2.4b <-
+  brm(data = d.trim, family = bernoulli,
+      request ~ 0 + intercept + round_number + Condition*Counterbalancing
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.99),
+      seed = 2113)
+
+save(b2.4b, file = "models/exp2_brmsfit4b.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit4b.rda")
+```
+
+The priors.
+
+```{r}
+prior_summary(b2.4b)
+```
+
+The results.
+
+```{r}
+print(b2.4b)
+```
+
+Creating a forest plot of parameters.
+
+```{r}
+stanplot(b2.4b)
+```
+
+Trace plots.
+
+```{r}
+plot(b2.4b, ask = F)
+```
+
+Looks like Stan sampled efficiently.
+
+In this model, the interaction parameter is 1.56, with 95% CIs above zero. This implies that there is an interaction effect. Condition only has an effect on cheating when participants played the Hidden game first.
+
+Converting the fixed effects to the probability scale:
+
+```{r}
+post <- posterior_samples(b2.4b)
+
+visible_VisibleFirst_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_VisibleFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_VisibleFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_VisibleFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference_VisibleFirst <- hidden_VisibleFirst_prob - visible_VisibleFirst_prob
+
+quantile(difference_VisibleFirst,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+When participants play the Visible game first, the absolute probability difference between the conditions is -0.03 (median), with 95% CIs crossing 0. Participants were no more likely to request from their partner in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.4b, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities are equal in each condition.
+
+What about for when participants play the Hidden game first?
+
+```{r}
+visible_HiddenFirst_prob <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing)
+
+visible_HiddenFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_HiddenFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing + 
+                                          post$b_Condition + post$`b_Condition:Counterbalancing`)
+
+hidden_HiddenFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference_HiddenFirst <- hidden_HiddenFirst_prob - visible_HiddenFirst_prob
+
+quantile(difference_HiddenFirst,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+When participants play the Hidden game first, the absolute probability difference between the conditions is +0.20 (median), with 95% CIs above 0. Participants are more likely to request from their partner when beneath the threshold in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.4b, "inv_logit_scaled(intercept + Counterbalancing) - inv_logit_scaled(intercept + Counterbalancing + Condition + Condition:Counterbalancing) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities differ across conditions.
+
+How much variance in the outcome does this model explain?
+
+```{r}
+bayes_R2(b2.4b) %>% round(2)
+```
+
+This model explains around 42% of the variance.
+
+```{r echo=F}
+# cleanup
+rm(d.trim, post, difference_VisibleFirst, difference_HiddenFirst,
+   hidden_VisibleFirst_prob, hidden_HiddenFirst_prob,
+   visible_VisibleFirst_prob, visible_HiddenFirst_prob)
 ```
 
 # 5. Binomial - Probability of not responding to a request
@@ -576,13 +716,13 @@ Again, the data wrangling for this model is a little trickier.
   d.trim <-
     d %>%
     # 1. select herd size, received, and requested
-    select(ID, Group, ends_with('.player.herd_size_after_shock'),
+    select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'),
            ends_with('.player.received'),
            ends_with('.player.request_amount')) %>%
     # 2a. flip the variables to get what the player gave and what their partner requested
     mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
               function(x) x[1:nrow(d) + c(1,-1)]) %>%
-    gather(key, value, -ID, -Group) %>%
+    gather(key, value, -ID, -Group, -Counterbalancing) %>%
     extract(key, c("Condition", "round_number", "variable"), 
             "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](herd_size_after_shock|received|request_amount)") %>%
     spread(variable, value) %>%
@@ -697,39 +837,174 @@ This model explains around 44% of the variance in the outcome.
 
 ```{r echo=F}
 # cleanup
-rm(d.trim, post, difference,
-   visible_prob, hidden_prob)
+rm(post, difference, visible_prob, hidden_prob)
+```
+
+# 6b. Binomial - Probability of fulfilling request when able (interacting with counterbalancing)
+
+As with `b2.4b`, we test for order effects by including an interaction.
+
+```{r eval=F}
+b2.6b <-
+  brm(data = d.trim, family = bernoulli,
+      notFulfilled ~ 0 + intercept + round_number + Condition*Counterbalancing
+      + (0 + intercept + round_number + Condition | Group/ID),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(student_t(3, 0, 10), class = sd),
+                prior(lkj(1), class = cor)),
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE,
+      iter = 2500, warmup = 1000, chains = 4, cores = 4,
+      seed = 2113)
+
+save(b2.6b, file = "models/exp2_brmsfit6b.rda")
+```
+
+```{r echo=F}
+load("models/exp2_brmsfit6b.rda")
+```
+
+Here are the priors we used.
+
+```{r}
+prior_summary(b2.6b)
+```
+
+Let's see the results.
+
+```{r}
+print(b2.6b)
+```
+
+Plotting the parameters.
+
+```{r}
+stanplot(b2.6b)
+```
+
+The interaction parameter has 95% CIs that cross zero, indicating no interaction effect.
+
+Converting the fixed effects to the probability scale:
+
+```{r}
+post <- posterior_samples(b2.6b)
+
+visible_VisibleFirst_prob <- inv_logit_scaled(post$b_intercept)
+
+visible_VisibleFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_VisibleFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+
+hidden_VisibleFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference_VisibleFirst <- hidden_VisibleFirst_prob - visible_VisibleFirst_prob
+
+quantile(difference_VisibleFirst,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+When participants play the Visible game first, the absolute probability difference between the conditions is -0.03 (median), with 95% CIs crossing 0. Participants were no more likely to request from their partner in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.6b, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities are equal in each condition.
+
+What about for when participants play the Hidden game first?
+
+```{r}
+visible_HiddenFirst_prob <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing)
+
+visible_HiddenFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+hidden_HiddenFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing + 
+                                          post$b_Condition + post$`b_Condition:Counterbalancing`)
+
+hidden_HiddenFirst_prob %>%
+  median() %>%
+  round(2)
+```
+
+```{r}
+difference_HiddenFirst <- hidden_HiddenFirst_prob - visible_HiddenFirst_prob
+
+quantile(difference_HiddenFirst,c(0.025,0.5,0.975)) %>% round(2)
+```
+
+When participants play the Hidden game first, the absolute probability difference between the conditions is +0.20 (median), with 95% CIs above 0. Participants are more likely to request from their partner when beneath the threshold in the Hidden condition.
+
+We compute a Bayes factor for this difference between probabilities.
+
+```{r}
+(1 / hypothesis(b2.6b, "inv_logit_scaled(intercept + Counterbalancing) - inv_logit_scaled(intercept + Counterbalancing + Condition + Condition:Counterbalancing) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+This Bayes factor implies moderate support for the hypothesis that the probabilities differ across conditions.
+
+```{r}
+bayes_R2(b2.6b) %>% round(2)
+```
+
+This model explains around 44% of the variance in the outcome.
+
+```{r echo=F}
+# cleanup
+rm(d.trim)
 ```
 
 # 7. Plotting
 
 ```{r echo=F, fig.height = 6, fig.width = 9.5}
 # prepare for gA
-post <- posterior_samples(b2.4)
-visible_prob <- inv_logit_scaled(post$b_intercept)
-hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+post <- posterior_samples(b2.4b)
+visible_VisibleFirst_prob <- inv_logit_scaled(post$b_intercept)
+visible_HiddenFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing)
+hidden_VisibleFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+hidden_HiddenFirst_prob   <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing +
+                                          post$b_Condition + post$`b_Condition:Counterbalancing`)
 
 gA <-
-  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
-         median    = c(median(visible_prob), median(hidden_prob)),
-         pi.025    = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250    = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750    = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
-         pi.975    = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  tibble(condition = factor(c('Visible','Hidden','Visible','Hidden'), 
+                            levels = c('Visible','Hidden')),
+         order     = factor(c('Visible first','Visible first','Hidden first','Hidden first'),
+                            levels = c('Visible first','Hidden first')),
+         median    = c(median(visible_VisibleFirst_prob), median(hidden_VisibleFirst_prob),
+                       median(visible_HiddenFirst_prob), median(hidden_HiddenFirst_prob)),
+         pi.025    = c(quantile(visible_VisibleFirst_prob, .025), quantile(hidden_VisibleFirst_prob, .025),
+                       quantile(visible_HiddenFirst_prob, .025) , quantile(hidden_HiddenFirst_prob, .025)),
+         pi.975    = c(quantile(visible_VisibleFirst_prob, .975), quantile(hidden_VisibleFirst_prob, .975),
+                       quantile(visible_HiddenFirst_prob, .975) , quantile(hidden_HiddenFirst_prob, .975))) %>%
   
-  ggplot(aes(x = condition, y = median, group = 1)) +
-  geom_line() + 
-  geom_point() + 
-  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 0.32"), size = 3.5) +
+  ggplot(aes(x = condition, y = median, group = order)) +
+  geom_line(aes(colour = order)) + 
+  geom_point(aes(colour = order)) + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975, fill = order), alpha = 0.075) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = " Hidden first: BF = 3.05"), 
+            colour = "#00BFC4", size = 3) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 3.5, label = "Visible first: BF = 0.31"), 
+            colour = "#F8766D", size = 3) +
   ylim(0,1) + 
   labs(y = 'Median predicted probability of\nrequesting when above threshold',
        x = 'Condition') +
   theme_classic() +
   theme(panel.grid.major.x = element_blank(),
         axis.title = element_text(size = 10),
-        axis.text = element_text(size = 8))
+        axis.text = element_text(size = 8),
+        legend.position = "none")
 
 # prepare for gB and gC
 d.plot <-
@@ -785,32 +1060,42 @@ gC <-
         axis.text = element_text(size = 8),
         axis.title.y.right = element_text(margin = margin(0, 0, 0, 6)))
 
-# prepare for gD
-post <- posterior_samples(b2.6)
-visible_prob <- inv_logit_scaled(post$b_intercept)
-hidden_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+# prepare for gA
+post <- posterior_samples(b2.6b)
+visible_VisibleFirst_prob <- inv_logit_scaled(post$b_intercept)
+visible_HiddenFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing)
+hidden_VisibleFirst_prob  <- inv_logit_scaled(post$b_intercept + post$b_Condition)
+hidden_HiddenFirst_prob   <- inv_logit_scaled(post$b_intercept + post$b_Counterbalancing +
+                                          post$b_Condition + post$`b_Condition:Counterbalancing`)
 
 gD <-
-  tibble(condition = factor(c('Visible','Hidden'), levels = c('Visible','Hidden')),
-         median    = c(median(visible_prob), median(hidden_prob)),
-         pi.025     = c(quantile(visible_prob, .025), quantile(hidden_prob, .025)),
-         pi.250     = c(quantile(visible_prob, .250), quantile(hidden_prob, .250)),
-         pi.750     = c(quantile(visible_prob, .750), quantile(hidden_prob, .750)),
-         pi.975     = c(quantile(visible_prob, .975), quantile(hidden_prob, .975))) %>%
+  tibble(condition = factor(c('Visible','Hidden','Visible','Hidden'), 
+                            levels = c('Visible','Hidden')),
+         order     = factor(c('Visible first','Visible first','Hidden first','Hidden first'),
+                            levels = c('Visible first','Hidden first')),
+         median    = c(median(visible_VisibleFirst_prob), median(hidden_VisibleFirst_prob),
+                       median(visible_HiddenFirst_prob), median(hidden_HiddenFirst_prob)),
+         pi.025    = c(quantile(visible_VisibleFirst_prob, .025), quantile(hidden_VisibleFirst_prob, .025),
+                       quantile(visible_HiddenFirst_prob, .025) , quantile(hidden_HiddenFirst_prob, .025)),
+         pi.975    = c(quantile(visible_VisibleFirst_prob, .975), quantile(hidden_VisibleFirst_prob, .975),
+                       quantile(visible_HiddenFirst_prob, .975) , quantile(hidden_HiddenFirst_prob, .975))) %>%
   
-  ggplot(aes(x = condition, y = median, group = 1)) +
-  geom_line() + 
-  geom_point() + 
-  geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
-  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 9.75"), size = 3.5) +
+  ggplot(aes(x = condition, y = median, group = order)) +
+  geom_line(aes(colour = order)) + 
+  geom_point(aes(colour = order)) + 
+  geom_ribbon(aes(ymin = pi.025, ymax = pi.975, fill = order), alpha = 0.075) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = " Hidden first: BF = 7.07"), 
+            colour = "#00BFC4", size = 3) +
+  geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 3.5, label = "Visible first: BF = 1.43"), 
+            colour = "#F8766D", size = 3) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability of\nnot fulfilling requests when able',
+  labs(y = 'Median predicted probability of\not fulfilling requests when able',
        x = 'Condition') +
   theme_classic() +
   theme(panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 10),
         axis.text = element_text(size = 8),
-        axis.title = element_text(size = 10))
+        legend.position = "none")
 
 # prepare for gE and gF
 d.plot <-
@@ -904,8 +1189,9 @@ g
 ggsave('figures/fig2.pdf', width = 9.5, height = 6)
 
 # cleanup
-rm(gA, gB, gC, gD, gE, gF, d.plot, top, bottom,
-   legend, post, visible_prob, hidden_prob)
+rm(gA, gB, gC, gD, gE, gF, d.plot, top, bottom, legend, post,
+   visible_HiddenFirst_prob, visible_VisibleFirst_prob,
+   hidden_HiddenFirst_prob, hidden_VisibleFirst_prob)
 ```
 
 # Session Info

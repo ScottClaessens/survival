@@ -677,7 +677,7 @@ gA <-
   geom_line() + 
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  # geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
   geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 11.59"), size = 3.5) +
   ylim(0,1) + 
   labs(y = 'Median predicted probability of\nrequesting when above threshold',
@@ -757,7 +757,7 @@ gD <-
   geom_line() + 
   geom_point() + 
   geom_ribbon(aes(ymin = pi.025, ymax = pi.975), alpha = 0.2) +
-  geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
+  # geom_ribbon(aes(ymin = pi.250, ymax = pi.750), alpha = 0.2) +
   geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = "BF = 2.80"), size = 3.5) +
   ylim(0,1) + 
   labs(y = 'Median predicted probability of\nnot fulfilling requests when able',
