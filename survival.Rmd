@@ -1,0 +1,514 @@
+---
+title: "Hidden vs Visible Resources in the Survival Game (Survival Analyses)"
+author: Scott Claessens
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
+# 0. Setup
+
+You'll need to download [Stan](http://mc-stan.org/) to your machine for these analyses. Note: this document will save **brms** model fits into your working directory.
+
+First, let's load all the packages we'll need.
+
+```{r message=FALSE, warning=FALSE}
+library(brms)
+library(cowplot)
+library(ggplot2)
+library(grid)
+library(png)
+library(tidyverse)
+```
+
+# 1. Study 1
+
+Load the data from Study 1.
+
+```{r}
+d <- 
+  read.csv('data/exp1data.csv', header = TRUE) %>%
+  as_tibble()
+```
+
+## 1.1. Compare conditions
+
+```{r echo=F}
+d.trim <- 
+  d %>% 
+  select(ID, Group, Condition, rounds_survived) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0))
+```
+
+```{r eval=F}
+# survival analysis
+# one participant per row so do not need the ID random effect
+b4.1 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + Condition + (1 | Group), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "Condition"),
+            iter = 2000, warmup = 1000, chains = 4, cores = 4,
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit1.rda", b4.1)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit1.rda")
+```
+
+```{r}
+print(b4.1)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.1)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Condition", breaks = 0:1, labels = c("Visible", "Hidden")) +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 1 (MTurk)")
+```
+
+Estimate survival rate in the Visible condition.
+
+```{r}
+post <- posterior_samples(b4.1)
+
+set.seed(2113)
+srateVisible <- rweibull(4000, post$shape, exp(post$b_intercept))
+median(srateVisible)
+```
+
+Estimate survival rate in the Hidden condition.
+
+```{r}
+set.seed(2113)
+srateHidden <- rweibull(4000, post$shape, exp(post$b_intercept + post$b_Condition))
+median(srateHidden)
+```
+
+Difference between these.
+
+```{r}
+difference <- srateHidden - srateVisible
+quantile(difference, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+Does survival rate differ across conditions? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.1, "Condition = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+The Bayes factor suggests that there is more support for the null hypothesis (that survival rate is equal across conditions).
+
+```{r echo=F}
+# cleanup
+rm(post, difference, srateHidden, srateVisible)
+```
+
+## 1.2. Proportion of rule 1 cheating
+
+```{r echo=F}
+# get proportion of cheating nbt rule 1
+# code modified from exp1.Rmd
+
+d_rule1 <-
+  d %>%
+  select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'), 
+         ends_with('.player.request')) %>%
+  gather(key, value, -ID, -Group, -Condition) %>%
+  extract(key, c("round_number", "variable"), 
+          "SurvivalGame.(.|..).player.(herd_size_after_shock|request)") %>%
+  spread(variable, value) %>%
+  mutate(round_number = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  drop_na() %>%                            # drop NAs, as player is no longer alive
+  filter(herd_size_after_shock >= 64) %>%  # only rounds above the minimum threshold
+  # ADDED LINES: summarise
+  group_by(ID, Group, Condition) %>%
+  summarise(prop_rule1 = sum(request) / n())
+
+d.trim <-
+  d %>%
+  select(ID, Group, Condition, rounds_survived) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+  # add cheating variable
+  right_join(d_rule1, by = c("ID", "Group", "Condition"))
+
+# cleanup
+rm(d_rule1)
+```
+
+```{r eval=F}
+b4.2 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + prop_rule1 + (1 | Group), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "prop_rule1"),
+            iter = 2000, warmup = 1000, chains = 4, cores = 4,
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit2.rda", b4.2)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit2.rda")
+```
+
+```{r}
+print(b4.2)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.2)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Proportion of Rule 1 cheating") +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 1 (MTurk)")
+rm(g)
+```
+
+Does survival rate differ the more people cheat rule 1? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.2, "prop_rule1 = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+There is only anecdotal evidence that it does.
+
+## 2.3. Proportion of rule 2 cheating
+
+```{r echo=F}
+# get proportion of cheating nbt rule 2
+# code modified from exp1.Rmd
+
+d_rule2 <-
+  d %>%
+  # 1. select herd size, received, and requested
+  select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'),
+         ends_with('.player.received'),
+         ends_with('.player.request_amount')) %>%
+  # 2a. flip the variables to get what the player gave and what their partner requested
+  mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+            function(x) x[1:nrow(d) + c(1,-1)]) %>%
+  gather(key, value, -ID, -Group, -Condition) %>%
+  extract(key, c("round_number", "variable"), 
+          "SurvivalGame.(.|..).player.(herd_size_after_shock|received|request_amount)") %>%
+  spread(variable, value) %>%
+  # 2b. rename the variables to match their new meaning
+  rename(gave              = received,
+         partner_requested = request_amount) %>%
+  mutate(round_number      = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  # 3. drop NAs, as no requesting happened
+  drop_na() %>%
+  # 4. was the player able to give?
+  filter(herd_size_after_shock - partner_requested >= 64) %>%
+  # 5. code 0 = request fulfilled, 1 = request not fulfilled
+  mutate(notFulfilled = ifelse(gave >= partner_requested, 0, 1) %>% as.integer()) %>%
+  # ADDED LINES: summarise
+  group_by(ID, Group, Condition) %>%
+  summarise(prop_rule2 = sum(notFulfilled) / n())
+
+d.trim <-
+  d %>%
+  select(ID, Group, Condition, rounds_survived) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+  # add cheating variable
+  right_join(d_rule2, by = c("ID", "Group", "Condition"))
+
+# cleanup
+rm(d_rule2)
+```
+
+```{r eval=F}
+b4.3 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + prop_rule2 + (1 | Group), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "prop_rule2"),
+            iter = 4000, warmup = 2000, chains = 4, cores = 4,
+            control = list(adapt_delta = 0.99),
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit3.rda", b4.3)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit3.rda")
+```
+
+```{r}
+print(b4.3)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.3)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Proportion of Rule 2 cheating") +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 1 (MTurk)")
+rm(g)
+```
+
+Does survival rate differ the more people cheat rule 2? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.3, "prop_rule2 = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+No. There is more evidence for the null hypothesis that the survival rate does not differ the more people cheat rule 2.
+
+# 2. Study 2
+
+Load the data from Study 2.
+
+```{r}
+d <- 
+    read.csv('data/exp2data.csv', header = TRUE) %>%
+    as_tibble()
+```
+
+## 2.1. Compare conditions
+
+```{r echo=F}
+d.trim <- 
+  d %>% 
+  select(ID, Group, Counterbalancing, hidden.rounds_survived, visible.rounds_survived) %>%
+  # long format
+  gather(Condition, rounds_survived, -ID, -Group, -Counterbalancing) %>%
+  mutate(Condition = ifelse(Condition == "hidden.rounds_survived", 1, 0)) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0))
+```
+
+```{r eval=F}
+b4.4 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + Condition + (1 | Group/ID), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "Condition"),
+            iter = 2000, warmup = 1000, chains = 4, cores = 4,
+            control = list(adapt_delta = 0.9, max_treedepth = 15),
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit4.rda", b4.4)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit4.rda")
+```
+
+```{r}
+print(b4.4)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.4)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Condition", breaks = 0:1, labels = c("Visible", "Hidden")) +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 2 (Lab)")
+rm(g)
+```
+
+Estimate survival rate in Visible condition.
+
+```{r}
+post <- posterior_samples(b4.4)
+
+set.seed(2113)
+srateVisible <- rweibull(4000, post$shape, exp(post$b_intercept))
+median(srateVisible)
+```
+
+Estimate survival rate in Hidden condition.
+
+```{r}
+set.seed(2113)
+srateHidden <- rweibull(4000, post$shape, exp(post$b_intercept + post$b_Condition))
+median(srateHidden)
+```
+
+```{r}
+difference <- srateHidden - srateVisible
+quantile(difference, c(0.025, 0.5, 0.975))
+```
+
+Does survival rate differ across conditions? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.4, "Condition = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+Yes, it does.
+
+```{r echo=F}
+# cleanup
+rm(post, difference, srateHidden, srateVisible)
+```
+
+## 2.2. Proportion of rule 1 cheating
+
+```{r echo=F}
+# get proportion of cheating nbt rule 1
+# code modified from exp2.Rmd
+
+d_rule1 <-
+  d %>%
+  select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'), 
+         ends_with('.player.request')) %>%
+  gather(key, value, -ID, -Group, -Counterbalancing) %>%
+  extract(key, c("Condition", "round_number", "variable"), 
+          "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](request|herd_size_after_shock)") %>%
+  spread(variable, value) %>%
+  mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+         round_number = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  drop_na() %>%
+  filter(herd_size_after_shock >= 64) %>%
+  # ADDED LINES: summarise
+  group_by(ID, Group, Condition) %>%
+  summarise(prop_rule1 = sum(request) / n())
+
+d.trim <-
+  d %>%
+  select(ID, Group, Counterbalancing, hidden.rounds_survived, visible.rounds_survived) %>%
+  gather(Condition, rounds_survived, -ID, -Group, -Counterbalancing) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+  # fix Condition column
+  mutate(Condition = ifelse(Condition == "hidden.rounds_survived", 1, 0)) %>%
+  # add cheating variable
+  right_join(d_rule1, by = c("ID", "Group", "Condition"))
+
+# cleanup
+rm(d_rule1)
+```
+
+```{r eval=F}
+b4.5 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + prop_rule1 + (1 | Group/ID), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "prop_rule1"),
+            iter = 2000, warmup = 1000, chains = 4, cores = 4,
+            control = list(adapt_delta = 0.99),
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit5.rda", b4.5)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit5.rda")
+```
+
+```{r}
+print(b4.5)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.5)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Proportion of Rule 1 cheating") +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 2 (Lab)")
+rm(g)
+```
+
+Does survival rate differ the more people cheat rule 1? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.5, "prop_rule1 = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+No. There is more evidence for the null hypothesis that the survival rate does not differ the more people break rule 1.
+
+## 2.3. Proportion of rule 2 cheating
+
+```{r echo=F}
+# get proportion of cheating nbt rule 2
+# code modified from exp2.Rmd
+
+d_rule2 <-
+  d %>%
+  select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'),
+         ends_with('.player.received'),
+         ends_with('.player.request_amount')) %>%
+  mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+            function(x) x[1:nrow(d) + c(1,-1)]) %>%
+  gather(key, value, -ID, -Group, -Counterbalancing) %>%
+  extract(key, c("Condition", "round_number", "variable"), 
+          "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](herd_size_after_shock|received|request_amount)") %>%
+  spread(variable, value) %>%
+  rename(gave              = received,
+         partner_requested = request_amount) %>%
+  mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+         round_number = as.integer(round_number)) %>%
+  arrange(round_number, ID, Group) %>%
+  drop_na() %>%
+  filter(herd_size_after_shock - partner_requested >= 64) %>%
+  mutate(notFulfilled = ifelse(gave >= partner_requested, 0, 1) %>% as.integer()) %>%
+  # ADDED LINES: summarise
+  group_by(ID, Group, Condition) %>%
+  summarise(prop_rule2 = sum(notFulfilled) / n())
+
+d.trim <-
+  d %>%
+  select(ID, Group, Counterbalancing, hidden.rounds_survived, visible.rounds_survived) %>%
+  gather(Condition, rounds_survived, -ID, -Group, -Counterbalancing) %>%
+  # need to add column for censoring (people who survived all rounds may have died later)
+  mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+  # fix Condition column
+  mutate(Condition = ifelse(Condition == "hidden.rounds_survived", 1, 0)) %>%
+  # add cheating variable
+  right_join(d_rule2, by = c("ID", "Group", "Condition"))
+
+# cleanup
+rm(d_rule2)
+```
+
+```{r eval=F}
+b4.6 <- brm(rounds_survived | cens(censored) ~ 0 + intercept + prop_rule2 + (1 | Group/ID), 
+            data = d.trim, family = weibull, inits = "0",
+            prior = prior(normal(0, 2), class = b, coef = "prop_rule2"),
+            iter = 2000, warmup = 1000, chains = 4, cores = 4,
+            control = list(adapt_delta = 0.99),
+            sample_prior = TRUE, seed = 2113)
+
+save(file = "models/survival_brmsfit6.rda", b4.6)
+```
+
+```{r echo=F}
+load("models/survival_brmsfit6.rda")
+```
+
+```{r}
+print(b4.6)
+```
+
+```{r echo=F}
+g <- marginal_effects(b4.6)
+plot(g, plot = FALSE)[[1]] + 
+  scale_x_continuous(name = "Proportion of Rule 2 cheating") +
+  scale_y_continuous(name = "Predicted number of rounds survived") +
+  ggtitle("Survival rate in Experiment 2 (Lab)")
+rm(g)
+```
+
+Does survival rate differ the more people cheat rule 2? Get Bayes factor.
+
+```{r}
+(1 / hypothesis(b4.6, "prop_rule2 = 0")$hypothesis$Evid.Ratio) %>% round(2)
+```
+
+With a Bayes factor below 0.33, there's strong support for the survival rate remaining the same as breaking rule 2 increases.
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

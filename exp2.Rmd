@@ -963,7 +963,9 @@ This model explains around 44% of the variance in the outcome.
 
 ```{r echo=F}
 # cleanup
-rm(d.trim)
+rm(d.trim, post, difference_HiddenFirst, difference_VisibleFirst,
+   hidden_HiddenFirst_prob, hidden_VisibleFirst_prob,
+   visible_HiddenFirst_prob, visible_VisibleFirst_prob)
 ```
 
 # 7. Plotting
