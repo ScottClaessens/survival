@@ -910,7 +910,7 @@ difference_VisibleFirst <- hidden_VisibleFirst_prob - visible_VisibleFirst_prob
 quantile(difference_VisibleFirst,c(0.025,0.5,0.975)) %>% round(2)
 ```
 
-When participants play the Visible game first, the absolute probability difference between the conditions is -0.03 (median), with 95% CIs crossing 0. Participants were no more likely to request from their partner in the Hidden condition.
+When participants play the Visible game first, the absolute probability difference between the conditions is +0.15 (median), with 95% CIs crossing 0. Participants were no more likely to not fulfill their partner's request in the Hidden condition.
 
 We compute a Bayes factor for this difference between probabilities.
 
@@ -918,7 +918,7 @@ We compute a Bayes factor for this difference between probabilities.
 (1 / hypothesis(b2.6b, "inv_logit_scaled(intercept) - inv_logit_scaled(intercept + Condition) = 0", seed = 2113)$hypothesis$Evid.Ratio) %>% round(2)
 ```
 
-This Bayes factor implies moderate support for the hypothesis that the probabilities are equal in each condition.
+This Bayes factor implies anecdotal support for the hypothesis that the probabilities are different across conditions.
 
 What about for when participants play the Hidden game first?
 
@@ -945,7 +945,7 @@ difference_HiddenFirst <- hidden_HiddenFirst_prob - visible_HiddenFirst_prob
 quantile(difference_HiddenFirst,c(0.025,0.5,0.975)) %>% round(2)
 ```
 
-When participants play the Hidden game first, the absolute probability difference between the conditions is +0.20 (median), with 95% CIs above 0. Participants are more likely to request from their partner when beneath the threshold in the Hidden condition.
+When participants play the Hidden game first, the absolute probability difference between the conditions is +0.26 (median), with 95% CIs above 0. Participants are more likely to not fulfill their partner's request in the Hidden condition.
 
 We compute a Bayes factor for this difference between probabilities.
 
@@ -1091,7 +1091,7 @@ gD <-
   geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 3.5, label = "Visible first: BF = 1.43"), 
             colour = "#F8766D", size = 3) +
   ylim(0,1) + 
-  labs(y = 'Median predicted probability of\not fulfilling requests when able',
+  labs(y = 'Median predicted probability of\nnot fulfilling requests when able',
        x = 'Condition') +
   theme_classic() +
   theme(panel.grid.major.x = element_blank(),
