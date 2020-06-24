@@ -13,10 +13,3 @@ bayesFactor2 <- function(model) {
     seed = 2113)$hypothesis$Evid.Ratio) %>% 
     round(2)
 }
-
-bayesFactor3 <- function(model, parameter) {
-  (1 / hypothesis(
-    model, 
-    paste0(parameter, " = 0"))$hypothesis$Evid.Ratio) %>% 
-    round(2)
-}

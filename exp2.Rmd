@@ -367,7 +367,7 @@ We compute a Bayes factor for this difference between probabilities.
 readd(bf2.04b2)
 ```
 
-This Bayes factor implies weak support for the hypothesis that the probabilities differ across conditions.
+This Bayes factor implies moderate support for the hypothesis that the probabilities differ across conditions.
 
 # 5. Binomial - Probability of not responding to a request
 
@@ -672,13 +672,7 @@ Trace plots.
 plot(readd(m2.07), ask = F)
 ```
 
-Conditional effects.
-
-```{r echo=F}
-readd(cond2.07)
-```
-
-Estimate survival rate in Visible condition.
+For participants who play the Visible game first, estimate survival rate in Visible condition.
 
 ```{r}
 post <- readd(post2.07)
@@ -701,13 +695,26 @@ difference <- srateHidden - srateVisible
 quantile(difference, c(0.025, 0.5, 0.975))
 ```
 
-Does survival rate differ across conditions? Get Bayes factor.
+For participants who play the Hidden game first, estimate survival rate in Visible condition.
 
-```{r echo=F}
-readd(bf2.07)
+```{r}
+set.seed(2113)
+srateVisible <- rweibull(4000, post$shape, exp(post$b_Intercept + post$b_Counterbalancing))
+median(srateVisible)
 ```
 
-Yes, it does.
+Estimate survival rate in Hidden condition.
+
+```{r}
+set.seed(2113)
+srateHidden <- rweibull(4000, post$shape, exp(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`))
+median(srateHidden)
+```
+
+```{r}
+difference <- srateHidden - srateVisible
+quantile(difference, c(0.025, 0.5, 0.975))
+```
 
 # 8. Survival analysis - Proportion of Rule 1 cheating
 
@@ -747,20 +754,6 @@ Trace plots.
 plot(readd(m2.08), ask = F)
 ```
 
-Conditional effects.
-
-```{r echo=F}
-readd(cond2.08)
-```
-
-Does survival rate differ the more people cheat rule 1? Get Bayes factor.
-
-```{r echo=F}
-readd(bf2.08)
-```
-
-No. There is more evidence for the null hypothesis that the survival rate does not differ the more people break rule 1.
-
 # 9. Survival analysis - Proportion of Rule 2 cheating
 
 Load data.
@@ -799,19 +792,228 @@ Trace plots.
 plot(readd(m2.09), ask = F)
 ```
 
-Conditional effects.
+# 10. Herd size when requesting / not requesting
+
+Get data.
 
 ```{r echo=F}
-readd(cond2.09)
+readd(d2.10)
 ```
 
-Does survival rate differ the more people cheat rule 2? Get Bayes factor.
+Fit the model.
 
 ```{r echo=F}
-readd(bf2.09)
+fitModel2.10
 ```
 
-With a Bayes factor below 0.33, there's strong support for the survival rate remaining the same as breaking rule 2 increases.
+What priors did we use?
+
+```{r echo=F}
+readd(priors2.10)
+```
+
+Results.
+
+```{r echo=F}
+print(readd(m2.10))
+```
+
+Trace plots.
+
+```{r echo=F}
+plot(readd(m2.10), ask = F)
+```
+
+We focus on participants who played the Hidden game first. 
+
+For participants in the Visible condition, posterior herd size when not requesting:
+
+```{r echo=F}
+post <- readd(post2.10)
+
+median(post$b_Intercept + post$b_Counterbalancing) %>% round(2)
+```
+
+And when requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_request + post$b_Counterbalancing + post$`b_Counterbalancing:request`) %>% round(2)
+```
+
+For participants in the Hidden condition, posterior herd size when not requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`) %>% round(2)
+```
+
+And when requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_Condition + post$b_request + post$`b_Condition:request` + post$b_Counterbalancing + post$`b_Condition:Counterbalancing` + post$`b_Counterbalancing:request` + post$`b_Condition:Counterbalancing:request`) %>% round(2)
+```
+
+Does the herd size when requesting differ across conditions? Get the posterior difference.
+
+```{r echo=F}
+quantile(post$b_Condition + post$`b_Condition:request` + post$`b_Condition:Counterbalancing` + post$`b_Condition:Counterbalancing:request`, c(.025, .5, .975)) %>% round(2)
+```
+
+No.
+
+# 11. Amount requested
+
+Get data. We log the amount requested.
+
+```{r echo=F}
+readd(d2.11)
+```
+
+Fit the model.
+
+```{r echo=F}
+fitModel2.11
+```
+
+What priors did we use?
+
+```{r echo=F}
+readd(priors2.11)
+```
+
+Results.
+
+```{r echo=F}
+print(readd(m2.11))
+```
+
+Trace plots.
+
+```{r echo=F}
+plot(readd(m2.11), ask = F)
+```
+
+We focus on participants who played the Hidden game first.
+
+How many cattle are requested on average by participants in the Visible condition?
+
+```{r echo=F}
+post <- readd(post2.11)
+median(exp(post$b_Intercept + post$b_Counterbalancing)) %>% round(2)
+```
+
+And in the Hidden condition?
+
+```{r echo=F}
+median(exp(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`)) %>% round(2)
+```
+
+Do these amounts differ?
+
+```{r}
+quantile(exp(post$b_Intercept + post$b_Counterbalancing) - exp(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`), c(.025, .5, .975)) %>% round(2)
+```
+
+Not quite.
+
+# 12. Difference between amount requested and amount needed
+
+Get data. We calculate `diff` as the difference between the amount requested and the amount needed to reach the minimum survival threshold.
+
+```{r echo=F}
+readd(d2.12)
+```
+
+Fit the model.
+
+```{r echo=F}
+fitModel2.12
+```
+
+What priors did we use?
+
+```{r echo=F}
+readd(priors2.12)
+```
+
+Results.
+
+```{r echo=F}
+print(readd(m2.12))
+```
+
+Trace plots.
+
+```{r echo=F}
+plot(readd(m2.12), ask = F)
+```
+
+We focus on participants who played the Hidden game first.
+
+What's the posterior `diff` score for participants in the Visible condition? A positive score indicates asking for "too many" resources, while a negative number indicates asking for "too few".
+
+```{r echo=F}
+post <- readd(post2.12)
+quantile(post$b_Intercept + post$b_Counterbalancing, c(.025, .5, .975)) %>% round(2)
+```
+
+And for participants in the Hidden condition?
+
+```{r echo=F}
+quantile(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`, c(.025, .5, .975)) %>% round(2)
+```
+
+# 13. Difference between amount requested by partner and amount given
+
+Get data. We calculate `diff` as the difference between the amount requested by one's partner and the amount given.
+
+```{r echo=F}
+readd(d2.13)
+```
+
+Fit the model.
+
+```{r echo=F}
+fitModel2.13
+```
+
+What priors did we use?
+
+```{r echo=F}
+readd(priors2.13)
+```
+
+Results.
+
+```{r echo=F}
+print(readd(m2.13))
+```
+
+Trace plots.
+
+```{r echo=F}
+plot(readd(m2.13), ask = F)
+```
+
+We focus on participants that played the Hidden game first.
+
+What's the posterior `diff` score for participants in the Visible condition?
+
+```{r echo=F}
+post <- readd(post2.13)
+quantile(post$b_Intercept + post$b_Counterbalancing, c(.025, .5, .975)) %>% round(2)
+```
+
+What about participants in the Hidden condition?
+
+```{r echo=F}
+quantile(post$b_Intercept + post$b_Condition + post$b_Counterbalancing + post$`b_Condition:Counterbalancing`, c(.025, .5, .975)) %>% round(2)
+```
+
+Difference between these.
+
+```{r}
+quantile(post$b_Condition + post$`b_Condition:Counterbalancing`, c(.025, .5, .975)) %>% round(2)
+```
 
 # Session Info
 

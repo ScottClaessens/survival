@@ -201,7 +201,7 @@ fitModel2.04b <- function(d2.04) {
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       sample_prior = TRUE,
       control = list(adapt_delta = 0.99),
-      seed = 2113)
+      seed = 2112)
 }
 
 fitModel2.05 <- function(d2.05) {
@@ -244,9 +244,12 @@ fitModel2.06b <- function(d2.06) {
 }
 
 fitModel2.07 <- function(d2.07) {
-  brm(rounds_survived | cens(censored) ~ 0 + Intercept + Condition + (1 | Group/ID), 
+  brm(rounds_survived | cens(censored) ~ 0 + Intercept + Condition*Counterbalancing + 
+        (1 | Group/ID), 
       data = d2.07, family = weibull, inits = "0",
-      prior = prior(normal(0, 2), class = b, coef = "Condition"),
+      prior = c(prior(normal(0, 2), class = b, coef = "Condition"),
+                prior(normal(0, 2), class = b, coef = "Counterbalancing"),
+                prior(normal(0, 2), class = b, coef = "Condition:Counterbalancing")),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       control = list(adapt_delta = 0.9, max_treedepth = 15),
       sample_prior = TRUE, seed = 2113)
@@ -267,6 +270,70 @@ fitModel2.09 <- function(d2.09) {
       prior = prior(normal(0, 2), class = b, coef = "prop_rule2"),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       control = list(adapt_delta = 0.99),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel2.10 <- function(d2.10) {
+  brm(herd_size_after_shock ~ 0 + Intercept + round_number + Condition*Counterbalancing*request + 
+        (1 + round_number + Condition | Group/ID), 
+      data = d2.10,
+      prior = c(prior(normal(0, 100), class = b, coef = 'Intercept'),
+                prior(normal(0, 5), class = b, coef = 'round_number'),
+                prior(normal(0, 5), class = b, coef = 'Condition'),
+                prior(normal(0, 5), class = b, coef = 'Condition:Counterbalancing'),
+                prior(normal(0, 5), class = b, coef = 'Condition:Counterbalancing:request'),
+                prior(normal(0, 5), class = b, coef = 'Condition:request'),
+                prior(normal(0, 5), class = b, coef = 'Counterbalancing'),
+                prior(normal(0, 5), class = b, coef = 'Counterbalancing:request'),
+                prior(normal(0, 5), class = b, coef = 'request')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel2.11 <- function(d2.11) {
+  brm(request_amount.log ~ 0 + Intercept + round_number + Condition*Counterbalancing + 
+        (1 + round_number + Condition | Group/ID), 
+      data = d2.11,
+      prior = c(prior(normal(0, 5), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition'),
+                prior(normal(0, 2), class = b, coef = 'Condition:Counterbalancing'),
+                prior(normal(0, 2), class = b, coef = 'Counterbalancing')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel2.12 <- function(d2.12) {
+  # deal with outliers by using student-t distribution
+  # https://solomonkurz.netlify.app/post/robust-linear-regression-with-the-robust-student-s-t-distribution/
+  brm(bf(diff ~ 0 + Intercept + round_number + Condition*Counterbalancing + 
+           (1 + round_number + Condition | Group/ID), nu = 4),
+      data = d2.12, family = student,
+      prior = c(prior(normal(0, 5), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition'),
+                prior(normal(0, 2), class = b, coef = 'Condition:Counterbalancing'),
+                prior(normal(0, 2), class = b, coef = 'Counterbalancing')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel2.13 <- function(d2.13) {
+  # deal with outliers by using student-t distribution
+  # https://solomonkurz.netlify.app/post/robust-linear-regression-with-the-robust-student-s-t-distribution/
+  brm(bf(diff ~ 0 + Intercept + round_number + Condition*Counterbalancing + 
+           (1 + round_number + Condition | Group/ID), nu = 4), 
+      data = d2.13, family = student,
+      prior = c(prior(normal(0, 5), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition'),
+                prior(normal(0, 2), class = b, coef = 'Condition:Counterbalancing'),
+                prior(normal(0, 2), class = b, coef = 'Counterbalancing')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
       sample_prior = TRUE, seed = 2113)
 }
 
@@ -337,4 +404,85 @@ fitModel3.06 <- function(d3.06) {
       sample_prior = TRUE,
       iter = 2500, warmup = 1000, chains = 4, cores = 4,
       seed = 2113)
+}
+
+fitModel3.07 <- function(d3.07) {
+  # one ID and Group per row so do not need the random effects
+  brm(rounds_survived | cens(censored) ~ 0 + Intercept + Condition, 
+      data = d3.07, family = weibull, inits = "0",
+      prior = prior(normal(0, 2), class = b, coef = "Condition"),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel3.08 <- function(d3.08) {
+  # one ID and Group per row so do not need the random effects
+  brm(rounds_survived | cens(censored) ~ 0 + Intercept + prop_rule1, 
+      data = d3.08, family = weibull, inits = "0",
+      prior = prior(normal(0, 2), class = b, coef = "prop_rule1"),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel3.09 <- function(d3.09) {
+  # one ID and Group per row so do not need the random effects
+  brm(rounds_survived | cens(censored) ~ 0 + Intercept + prop_rule2, 
+      data = d3.09, family = weibull, inits = "0",
+      prior = prior(normal(0, 2), class = b, coef = "prop_rule2"),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      sample_prior = TRUE, seed = 2113, control = list(adapt_delta = 0.85))
+}
+
+fitModel3.10 <- function(d3.10) {
+  brm(herd_size_after_shock ~ 0 + Intercept + round_number + Condition*request + 
+        (1 + round_number | ID), 
+      data = d3.10,
+      prior = c(prior(normal(0, 100), class = b, coef = 'Intercept'),
+                prior(normal(0, 5), class = b, coef = 'round_number'),
+                prior(normal(0, 5), class = b, coef = 'Condition'),
+                prior(normal(0, 5), class = b, coef = 'request'),
+                prior(normal(0, 5), class = b, coef = 'Condition:request')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel3.11 <- function(d3.11) {
+  brm(request_amount.log ~ 0 + Intercept + round_number + Condition + 
+        (1 + round_number | ID), 
+      data = d3.11,
+      prior = c(prior(normal(0, 5), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition')),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel3.12 <- function(d3.12) {
+  # deal with outliers by using student-t distribution
+  # https://solomonkurz.netlify.app/post/robust-linear-regression-with-the-robust-student-s-t-distribution/
+  brm(bf(diff ~ 0 + Intercept + round_number + Condition + 
+        (1 + round_number | ID), nu = 4), 
+      data = d3.12, family = student,
+      prior = c(prior(normal(0, 2), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition')),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE, seed = 2113)
+}
+
+fitModel3.13 <- function(d3.13) {
+  # deal with outliers by using student-t distribution
+  # https://solomonkurz.netlify.app/post/robust-linear-regression-with-the-robust-student-s-t-distribution/
+  brm(bf(diff ~ 0 + Intercept + round_number + Condition + 
+           (1 + round_number | ID), nu = 4), 
+      data = d3.13, family = student,
+      prior = c(prior(normal(0, 5), class = b, coef = 'Intercept'),
+                prior(normal(0, 2), class = b, coef = 'round_number'),
+                prior(normal(0, 2), class = b, coef = 'Condition')),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.99),
+      sample_prior = TRUE, seed = 2113)
 }

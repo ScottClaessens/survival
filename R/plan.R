@@ -82,9 +82,6 @@ plan <- drake_plan(
   bf1.04 = bayesFactor1(m1.04),
   bf1.05 = bayesFactor1(m1.05),
   bf1.06 = bayesFactor1(m1.06),
-  bf1.07 = bayesFactor3(m1.07, "Condition"),
-  bf1.08 = bayesFactor3(m1.08, "prop_rule1"),
-  bf1.09 = bayesFactor3(m1.09, "prop_rule2"),
   # conditional effects
   cond1.07 = getCondEffects1.07(m1.07),
   cond1.08 = getCondEffects1.08(m1.08),
@@ -114,6 +111,10 @@ plan <- drake_plan(
   d2.07 = wrangleData2.07(d2.00),
   d2.08 = wrangleData2.08(d2.00),
   d2.09 = wrangleData2.09(d2.00),
+  d2.10 = wrangleData2.10(d2.00),
+  d2.11 = wrangleData2.11(d2.00),
+  d2.12 = wrangleData2.12(d2.00),
+  d2.13 = wrangleData2.13(d2.00),
   # modelling
   m2.01  = fitModel2.01(d2.01),  # game control check - number of shocks
   m2.02  = fitModel2.02(d2.02),  # game control check - total amount lost due to shocks
@@ -126,6 +127,10 @@ plan <- drake_plan(
   m2.07  = fitModel2.07(d2.07),  # survival analysis - condition
   m2.08  = fitModel2.08(d2.08),  # survival analysis - proportion of rule 1 cheating
   m2.09  = fitModel2.09(d2.09),  # survival analysis - proportion of rule 2 cheating
+  m2.10  = fitModel2.10(d2.10),  # herd size when requesting / not requesting
+  m2.11  = fitModel2.11(d2.11),  # log amount requested
+  m2.12  = fitModel2.12(d2.12),  # difference between amount requested and amount needed
+  m2.13  = fitModel2.13(d2.13),  # difference between amount requested by partner and amount given
   # prior summaries
   priors2.01  = prior_summary(m2.01),
   priors2.02  = prior_summary(m2.02),
@@ -138,6 +143,10 @@ plan <- drake_plan(
   priors2.07  = prior_summary(m2.07),
   priors2.08  = prior_summary(m2.08),
   priors2.09  = prior_summary(m2.09),
+  priors2.10  = prior_summary(m2.10),
+  priors2.11  = prior_summary(m2.11),
+  priors2.12  = prior_summary(m2.12),
+  priors2.13  = prior_summary(m2.13),
   # parameter plots
   pars2.01  = mcmc_plot(m2.01),
   pars2.02  = mcmc_plot(m2.02),
@@ -150,6 +159,10 @@ plan <- drake_plan(
   pars2.07  = mcmc_plot(m2.07),
   pars2.08  = mcmc_plot(m2.08),
   pars2.09  = mcmc_plot(m2.09),
+  pars2.10  = mcmc_plot(m2.10),
+  pars2.11  = mcmc_plot(m2.11),
+  pars2.12  = mcmc_plot(m2.12),
+  pars2.13  = mcmc_plot(m2.13),
   # posterior
   post2.01  = posterior_samples(m2.01),
   post2.02  = posterior_samples(m2.02),
@@ -162,6 +175,10 @@ plan <- drake_plan(
   post2.07  = posterior_samples(m2.07),
   post2.08  = posterior_samples(m2.08),
   post2.09  = posterior_samples(m2.09),
+  post2.10  = posterior_samples(m2.10),
+  post2.11  = posterior_samples(m2.11),
+  post2.12  = posterior_samples(m2.12),
+  post2.13  = posterior_samples(m2.13),
   # bayes factors
   bf2.03   = bayesFactor1(m2.03),
   bf2.04a  = bayesFactor1(m2.04a),
@@ -171,13 +188,6 @@ plan <- drake_plan(
   bf2.06a  = bayesFactor1(m2.06a),
   bf2.06b1 = bayesFactor1(m2.06b),
   bf2.06b2 = bayesFactor2(m2.06b),
-  bf2.07   = bayesFactor3(m2.07, "Condition"),
-  bf2.08   = bayesFactor3(m2.08, "prop_rule1"),
-  bf2.09   = bayesFactor3(m2.09, "prop_rule2"),
-  # conditional effects
-  cond2.07 = getCondEffects2.07(m2.07),
-  cond2.08 = getCondEffects2.08(m2.08),
-  cond2.09 = getCondEffects2.09(m2.09),
   # figures
   fig2 = createFig2(),
   # report
@@ -200,6 +210,13 @@ plan <- drake_plan(
   d3.04 = wrangleData3.04(d3.00),
   d3.05 = wrangleData3.05(d3.00),
   d3.06 = wrangleData3.06(d3.00),
+  d3.07 = wrangleData3.07(d3.00),
+  d3.08 = wrangleData3.08(d3.00),
+  d3.09 = wrangleData3.09(d3.00),
+  d3.10 = wrangleData3.10(d3.00),
+  d3.11 = wrangleData3.11(d3.00),
+  d3.12 = wrangleData3.12(d3.00),
+  d3.13 = wrangleData3.13(d3.00),
   # modelling
   m3.01 = fitModel3.01(d3.01), # game control check - number of shocks
   m3.02 = fitModel3.02(d3.02), # game control check - total amount lost due to shocks
@@ -207,6 +224,13 @@ plan <- drake_plan(
   m3.04 = fitModel3.04(d3.04), # probability of requesting when beneath threshold
   m3.05 = fitModel3.05(d3.05), # probability of responding
   m3.06 = fitModel3.06(d3.06), # probability of fulfilling request when able
+  m3.07 = fitModel3.07(d3.07), # survival analysis - condition
+  m3.08 = fitModel3.08(d3.08), # survival analysis - proportion of rule 1 cheating
+  m3.09 = fitModel3.09(d3.09), # survival analysis - proportion of rule 2 cheating
+  m3.10 = fitModel3.10(d3.10), # herd size when requesting / not requesting
+  m3.11 = fitModel3.11(d3.11), # log amount requested
+  m3.12 = fitModel3.12(d3.12), # difference between amount requested and amount needed
+  m3.13 = fitModel3.13(d3.13), # difference between amount requested by partner and amount given
   # prior summaries
   priors3.01 = prior_summary(m3.01),
   priors3.02 = prior_summary(m3.02),
@@ -214,6 +238,13 @@ plan <- drake_plan(
   priors3.04 = prior_summary(m3.04),
   priors3.05 = prior_summary(m3.05),
   priors3.06 = prior_summary(m3.06),
+  priors3.07 = prior_summary(m3.07),
+  priors3.08 = prior_summary(m3.08),
+  priors3.09 = prior_summary(m3.09),
+  priors3.10 = prior_summary(m3.10),
+  priors3.11 = prior_summary(m3.11),
+  priors3.12 = prior_summary(m3.12),
+  priors3.13 = prior_summary(m3.13),
   # parameter plots
   pars3.01 = mcmc_plot(m3.01),
   pars3.02 = mcmc_plot(m3.02),
@@ -221,6 +252,13 @@ plan <- drake_plan(
   pars3.04 = mcmc_plot(m3.04),
   pars3.05 = mcmc_plot(m3.05),
   pars3.06 = mcmc_plot(m3.06),
+  pars3.07 = mcmc_plot(m3.07),
+  pars3.08 = mcmc_plot(m3.08),
+  pars3.09 = mcmc_plot(m3.09),
+  pars3.10 = mcmc_plot(m3.10),
+  pars3.11 = mcmc_plot(m3.11),
+  pars3.12 = mcmc_plot(m3.12),
+  pars3.13 = mcmc_plot(m3.13),
   # posterior
   post3.01 = posterior_samples(m3.01),
   post3.02 = posterior_samples(m3.02),
@@ -228,6 +266,13 @@ plan <- drake_plan(
   post3.04 = posterior_samples(m3.04),
   post3.05 = posterior_samples(m3.05),
   post3.06 = posterior_samples(m3.06),
+  post3.07 = posterior_samples(m3.07),
+  post3.08 = posterior_samples(m3.08),
+  post3.09 = posterior_samples(m3.09),
+  post3.10 = posterior_samples(m3.10),
+  post3.11 = posterior_samples(m3.11),
+  post3.12 = posterior_samples(m3.12),
+  post3.13 = posterior_samples(m3.13),
   # bayes factors
   bf3.03 = bayesFactor1(m3.03),
   bf3.04 = bayesFactor1(m3.04),

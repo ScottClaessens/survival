@@ -495,14 +495,6 @@ difference <- srateHidden - srateVisible
 quantile(difference, c(0.025, 0.5, 0.975)) %>% round(2)
 ```
 
-Bayes Factor for difference between conditions.
-
-```{r echo=F}
-readd(bf1.07)
-```
-
-The Bayes factor suggests that there is more support for the null hypothesis (that survival rate is equal across conditions).
-
 # 8. Survival analysis - Proportion of Rule 1 cheating
 
 Get data.
@@ -546,14 +538,6 @@ Conditional effects.
 ```{r echo=F}
 readd(cond1.08)
 ```
-
-Does survival rate differ the more people cheat rule 1? Get Bayes factor.
-
-```{r echo=F}
-readd(bf1.08)
-```
-
-There's only anecdotal evidence that it does.
 
 # 9. Survival analysis - Proportion of Rule 2 cheating
 
@@ -599,14 +583,6 @@ Conditional effects.
 readd(cond1.09)
 ```
 
-Does survival rate differ the more people cheat rule 2? Get Bayes factor.
-
-```{r echo=F}
-readd(bf1.09)
-```
-
-No. There is more evidence for the null hypothesis that the survival rate does not differ the more people cheat rule 2.
-
 # 10. Herd size when requesting / not requesting
 
 Get data.
@@ -644,35 +620,34 @@ For participants in the Visible condition, posterior herd size when not requesti
 ```{r echo=F}
 post <- readd(post1.10)
 
-quantile(post$b_Intercept, c(.025, .5, .975)) %>% round(2)
+median(post$b_Intercept) %>% round(2)
 ```
 
 And when requesting:
 
 ```{r echo=F}
-quantile(post$b_Intercept + post$b_request, c(.025, .5, .975)) %>% round(2)
+median(post$b_Intercept + post$b_request) %>% round(2)
 ```
 
 For participants in the Hidden condition, posterior herd size when not requesting:
 
 ```{r echo=F}
-quantile(post$b_Intercept + post$b_Condition, c(.025, .5, .975)) %>% round(2)
+median(post$b_Intercept + post$b_Condition) %>% round(2)
 ```
 
 And when requesting:
 
 ```{r echo=F}
-quantile(post$b_Intercept + post$b_Condition + post$b_request + post$`b_Condition:request`, 
-         c(.025, .5, .975)) %>% round(2)
+median(post$b_Intercept + post$b_Condition + post$b_request + post$`b_Condition:request`) %>% round(2)
 ```
 
-Does the herd size when requesting differ across conditions?
+Does the herd size when requesting differ across conditions? Get the posterior difference.
 
 ```{r echo=F}
-sum(post$b_request + post$`b_Condition:request` < 0) / 8000
+quantile(post$b_Condition + post$`b_Condition:request`, c(.025, .5, .975)) %>% round(2)
 ```
 
-Yes. 100% of the posterior difference is above zero, indicating that participants in the Hidden condition have more resources when they request from their partner than participants in the Visible condition.
+Yes. Participants in the Hidden condition have more resources when they request from their partner than participants in the Visible condition.
 
 # 11. Amount requested
 
@@ -710,22 +685,22 @@ How many cattle are requested on average by participants in the Visible conditio
 
 ```{r echo=F}
 post <- readd(post1.11)
-quantile(exp(post$b_Intercept), c(.025, .5, .975)) %>% round(2)
+median(exp(post$b_Intercept)) %>% round(2)
 ```
 
 And in the Hidden condition?
 
 ```{r echo=F}
-quantile(exp(post$b_Intercept + post$b_Condition), c(.025, .5, .975)) %>% round(2)
+median(exp(post$b_Intercept + post$b_Condition)) %>% round(2)
 ```
 
 Do these amounts differ?
 
 ```{r}
-sum(post$b_Condition > 0) / 4000
+quantile(exp(post$b_Intercept) - exp(post$b_Intercept + post$b_Condition), c(.025, .5, .975)) %>% round(2)
 ```
 
-Yes. Participants in the Hidden condition ask for more cattle when they request.
+Not quite.
 
 # 12. Difference between amount requested and amount required
 
@@ -766,7 +741,7 @@ post <- readd(post1.12)
 quantile(post$b_Intercept, c(.025, .5, .975)) %>% round(2)
 ```
 
-And for participants in the Visible condition?
+And for participants in the Hidden condition?
 
 ```{r echo=F}
 quantile(post$b_Intercept + post$b_Condition, c(.025, .5, .975)) %>% round(2)
@@ -820,12 +795,6 @@ quantile(post$b_Intercept + post$b_Condition, c(.025, .5, .975)) %>% round(2)
 ```
 
 Participants in the Hidden condition give 3 cattle less than was requested, on average.
-
-```{r echo=F}
-sum(post$b_Condition < 0) / 8000
-```
-
-These amounts differ across conditions.
 
 # Session Info
 

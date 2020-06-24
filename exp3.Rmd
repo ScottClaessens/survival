@@ -393,6 +393,316 @@ readd(bf3.06)
 
 This Bayes Factor provides anecdotal support for the alternative (difference) over the null (no difference) hypothesis.
 
+# 7. Survival analysis - Condition
+
+Get the data, adding a column for `censored`.
+
+```{r echo=F}
+readd(d3.07)
+```
+
+Fit the survival model.
+
+```{r echo=F}
+fitModel3.07
+```
+
+What priors did we use?
+
+```{r echo=F}
+readd(priors3.07)
+```
+
+Get the results.
+
+```{r echo=F}
+print(readd(m3.07))
+```
+
+Plot the parameters.
+
+```{r echo=F}
+readd(pars3.07)
+```
+
+Estimate survival rate in the Visible condition.
+
+```{r}
+post <- readd(post3.07)
+
+set.seed(2113)
+srateVisible <- rweibull(4000, post$shape, exp(post$b_Intercept))
+median(srateVisible)
+```
+
+Estimate survival rate in the Hidden condition.
+
+```{r}
+set.seed(2113)
+srateHidden <- rweibull(4000, post$shape, exp(post$b_Intercept + post$b_Condition))
+median(srateHidden)
+```
+
+Difference between these.
+
+```{r}
+difference <- srateHidden - srateVisible
+quantile(difference, c(0.025, 0.5, 0.975)) %>% round(2)
+```
+
+# 8. Survival analysis - Proportion of Rule 1 cheating
+
+Get data.
+
+```{r echo=F}
+readd(d3.08)
+```
+
+Fit the model.
+
+```{r echo=F}
+fitModel3.08
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.08)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.08))
+```
+
+Plot parameters.
+
+```{r echo=F}
+readd(pars3.08)
+```
+
+# 9. Survival analysis - Proportion of Rule 2 cheating
+
+Get data.
+
+```{r echo=F}
+readd(d3.09)
+```
+
+Fit the model.
+
+```{r echo=F}
+fitModel3.09
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.09)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.09))
+```
+
+Plot parameters.
+
+```{r echo=F}
+readd(pars3.09)
+```
+
+# 10. Herd size when requesting / not requesting
+
+Get data.
+
+```{r echo=F}
+readd(d3.10)
+```
+
+Fit model.
+
+```{r echo=F}
+fitModel3.10
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.10)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.10))
+```
+
+For participants in the Visible condition, posterior herd size when not requesting:
+
+```{r echo=F}
+post <- readd(post3.10)
+
+median(post$b_Intercept) %>% round(2)
+```
+
+And when requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_request) %>% round(2)
+```
+
+For participants in the Hidden condition, posterior herd size when not requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_Condition) %>% round(2)
+```
+
+And when requesting:
+
+```{r echo=F}
+median(post$b_Intercept + post$b_Condition + post$b_request + post$`b_Condition:request`) %>% round(2)
+```
+
+Does the herd size when requesting differ across conditions? Get the posterior difference.
+
+```{r echo=F}
+quantile(post$b_Condition + post$`b_Condition:request`, c(.025, .5, .975)) %>% round(2)
+```
+
+No.
+
+# 11. Amount requested
+
+Get data. We log the outcome as `request_amount` follows an exponential distribution.
+
+```{r echo=F}
+readd(d3.11)
+```
+
+Fit model.
+
+```{r echo=F}
+fitModel3.11
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.11)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.11))
+```
+
+How many cattle are requested on average by participants in the Visible condition?
+
+```{r echo=F}
+post <- readd(post3.11)
+median(exp(post$b_Intercept)) %>% round(2)
+```
+
+And in the Hidden condition?
+
+```{r echo=F}
+median(exp(post$b_Intercept + post$b_Condition)) %>% round(2)
+```
+
+Do these amounts differ?
+
+```{r}
+quantile(exp(post$b_Intercept) - exp(post$b_Intercept + post$b_Condition), c(.025, .5, .975)) %>% round(2)
+```
+
+No.
+
+# 12. Difference between amount requested and amount required
+
+Get data. We focus only on requests made when beneath the threshold, and calculate the `diff` between the amount requested and the amount required to get to 64 (the minimum threshold). 
+
+```{r echo=F}
+readd(d3.12)
+```
+
+Fit model.
+
+```{r echo=F}
+fitModel3.12
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.12)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.12))
+```
+
+What's the posterior `diff` score for participants in the Visible condition? A positive score indicates asking for "too many" resources, while a negative number indicates asking for "too few".
+
+```{r echo=F}
+post <- readd(post3.12)
+quantile(post$b_Intercept, c(.025, .5, .975)) %>% round(2)
+```
+
+And for participants in the Visible condition?
+
+```{r echo=F}
+quantile(post$b_Intercept + post$b_Condition, c(.025, .5, .975)) %>% round(2)
+```
+
+Neither differ from zero.
+
+# 13. Difference between amount requested by partner and amount given
+
+Get data. `diff` is the difference between amount requested by partner and amount given.
+
+```{r echo=F}
+readd(d3.13)
+```
+
+Fit model.
+
+```{r echo=F}
+fitModel3.13
+```
+
+Priors.
+
+```{r echo=F}
+readd(priors3.13)
+```
+
+Print results.
+
+```{r echo=F}
+print(readd(m3.13))
+```
+
+What's the posterior `diff` score for participants in the Visible condition?
+
+```{r echo=F}
+post <- readd(post3.13)
+quantile(post$b_Intercept, c(.025, .5, .975)) %>% round(2)
+```
+
+What about participants in the Hidden condition?
+
+```{r echo=F}
+quantile(post$b_Intercept + post$b_Condition, c(.025, .5, .975)) %>% round(2)
+```
+
+Participants in the Hidden condition give 2 cattle less than was requested, on average.
+
 # Session Info
 
 ```{r}

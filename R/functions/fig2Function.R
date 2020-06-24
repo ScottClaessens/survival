@@ -23,7 +23,7 @@ createFig2 <- function() {
     geom_line(aes(colour = order)) + 
     geom_point(aes(colour = order)) + 
     geom_ribbon(aes(ymin = pi.025, ymax = pi.975, fill = order), alpha = 0.075) +
-    geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = " Hidden first: BF = 2.44"), 
+    geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 1.5, label = " Hidden first: BF = 3.07"), 
               colour = "#00BFC4", size = 3) +
     geom_text(aes(x = Inf, y = Inf, hjust = 1, vjust = 3.5, label = "Visible first: BF = 0.31"), 
               colour = "#F8766D", size = 3) +

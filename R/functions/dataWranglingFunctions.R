@@ -370,6 +370,78 @@ wrangleData2.09 <- function(d2.00) {
   return(out)
 }
 
+wrangleData2.10 <- function(d2.00) {
+  d2.00 %>%
+    select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request')) %>%
+    gather(key, value, -ID, -Group, -Counterbalancing) %>%
+    extract(key, c("Condition", "round_number", "variable"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](request|herd_size_after_shock)") %>%
+    spread(variable, value) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na()
+}
+
+wrangleData2.11 <- function(d2.00) {
+  d2.00 %>%
+    select(ID, Group, Counterbalancing, ends_with('.player.request_amount')) %>%
+    gather(key, request_amount, -ID, -Group, -Counterbalancing) %>%
+    extract(key, c("Condition", "round_number"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.]request_amount") %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number)) %>%
+    drop_na() %>%
+    mutate(request_amount.log = log(request_amount)) %>%
+    filter(request_amount < 500)
+}
+
+wrangleData2.12 <- function(d2.00) {
+  d2.00 %>%
+    select(ID, Group, Counterbalancing, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request_amount')) %>%
+    gather(key, value, -ID, -Group, -Counterbalancing) %>%
+    extract(key, c("Condition", "round_number", "variable"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](request_amount|herd_size_after_shock)") %>%
+    spread(variable, value) %>%
+    filter(herd_size_after_shock < 64) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number),
+           # get difference between amount requested and amount needed to reach threshold (64)
+           diff = request_amount - (64 - herd_size_after_shock)
+           ) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>%
+    filter(request_amount < 500)
+}
+
+wrangleData2.13 <- function(d2.00) {
+  d2.00 %>%
+    # 1. select herd size, received, and requested
+    select(ID, Group, Counterbalancing,
+           ends_with('.player.received'),
+           ends_with('.player.request_amount')) %>%
+    # 2a. flip the variables to get what the player gave and what their partner requested
+    mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+              function(x) x[1:nrow(d2.00) + c(1,-1)]) %>%
+    gather(key, value, -ID, -Group, -Counterbalancing) %>%
+    extract(key, c("Condition", "round_number", "variable"), 
+            "SurvivalGame_(Hidden|Visible)[.](.|..)[.]player[.](received|request_amount)") %>%
+    spread(variable, value) %>%
+    # 2b. rename the variables to match their new meaning
+    rename(gave              = received,
+           partner_requested = request_amount) %>%
+    mutate(Condition    = ifelse(Condition == 'Hidden', 1, 0),
+           round_number = as.integer(round_number),
+           diff         = gave - partner_requested) %>%
+    arrange(round_number, ID, Group) %>%
+    # 3. drop NAs, as no requesting happened
+    drop_na() %>%
+    # 4. filter if partner_requested is outlier
+    filter(partner_requested < 500)
+}
+
 # experiment 3
 
 wrangleData3.01 <- function(d3.00) {
@@ -450,3 +522,153 @@ wrangleData3.06 <- function(d3.00) {
     filter(IDinGroup == 2)
 }
 
+wrangleData3.07 <- function(d3.00) {
+  d3.00 %>% 
+    select(ID, IDinGroup, Group, Condition, rounds_survived) %>%
+    # need to add column for censoring (people who survived all rounds may have died later)
+    mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+}
+
+wrangleData3.08 <- function(d3.00) {
+  d_rule1 <-
+    d3.00 %>%
+    select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request')) %>%
+    gather(key, value, -ID, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|request)") %>%
+    spread(variable, value) %>%
+    mutate(round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>%                            # drop NAs, as player is no longer alive
+    filter(herd_size_after_shock >= 64) %>%  # only rounds above the minimum threshold
+    # ADDED LINES: summarise
+    group_by(ID, Group, Condition) %>%
+    summarise(prop_rule1 = sum(request) / n())
+  out <-
+    d3.00 %>%
+    select(ID, IDinGroup, Group, Condition, rounds_survived) %>%
+    # need to add column for censoring (people who survived all rounds may have died later)
+    mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+    # add cheating variable
+    right_join(d_rule1, by = c("ID", "Group", "Condition")) %>%
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+  return(out)
+}
+
+wrangleData3.09 <- function(d3.00) {
+  d_rule2 <-
+    d3.00 %>%
+    # 1. select herd size, received, and requested
+    select(ID, Group, Condition, ends_with('.player.herd_size_after_shock'),
+           ends_with('.player.received'),
+           ends_with('.player.request_amount')) %>%
+    # 2a. flip the variables to get what the player gave and what their partner requested
+    mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+              function(x) x[1:nrow(d3.00) + c(1,-1)]) %>%
+    gather(key, value, -ID, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|received|request_amount)") %>%
+    spread(variable, value) %>%
+    # 2b. rename the variables to match their new meaning
+    rename(gave              = received,
+           partner_requested = request_amount) %>%
+    mutate(round_number      = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    # 3. drop NAs, as no requesting happened
+    drop_na() %>%
+    # 4. was the player able to give?
+    filter(herd_size_after_shock - partner_requested >= 64) %>%
+    # 5. code 0 = request fulfilled, 1 = request not fulfilled
+    mutate(notFulfilled = ifelse(gave >= partner_requested, 0, 1) %>% as.integer()) %>%
+    # ADDED LINES: summarise
+    group_by(ID, Group, Condition) %>%
+    summarise(prop_rule2 = sum(notFulfilled) / n())
+  out <-
+    d3.00 %>%
+    select(ID, IDinGroup, Group, Condition, rounds_survived) %>%
+    # need to add column for censoring (people who survived all rounds may have died later)
+    mutate(censored = ifelse(rounds_survived == 25, 1, 0)) %>%
+    # add cheating variable
+    right_join(d_rule2, by = c("ID", "Group", "Condition")) %>%
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+  return(out)
+}
+
+wrangleData3.10 <- function(d3.00) {
+  d3.00 %>%
+    select(ID, IDinGroup, Group, Condition, ends_with('.player.herd_size_after_shock'), 
+           ends_with('.player.request')) %>%
+    gather(key, value, -ID, -IDinGroup, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|request)") %>%
+    spread(variable, value) %>%
+    mutate(round_number = as.integer(round_number)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>% # drop NAs, as player is no longer alive
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+}
+
+wrangleData3.11 <- function(d3.00) {
+  d3.00 %>%
+    select(ID, IDinGroup, Group, Condition, ends_with('.player.request_amount'),
+           ends_with('.player.herd_size_after_shock')) %>%
+    gather(key, value, -ID, -IDinGroup, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|request_amount)") %>%
+    spread(variable, value) %>%
+    mutate(round_number = as.integer(round_number),
+           request_amount.log = log(request_amount)) %>%
+    arrange(round_number, ID, Group) %>% 
+    drop_na() %>% # drop NAs, player is not alive / did not request
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+}
+
+wrangleData3.12 <- function(d3.00) {
+  d3.00 %>%
+    select(ID, IDinGroup, Group, Condition, ends_with('.player.request_amount'),
+           ends_with('.player.herd_size_after_shock')) %>%
+    gather(key, value, -ID, -IDinGroup, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(herd_size_after_shock|request_amount)") %>%
+    spread(variable, value) %>%
+    filter(herd_size_after_shock < 64) %>%
+    mutate(round_number = as.numeric(round_number),
+           # get difference between amount requested and amount needed to reach threshold (64)
+           diff = request_amount - (64 - herd_size_after_shock)) %>%
+    arrange(round_number, ID, Group) %>%
+    drop_na() %>% # drop NAs player is not alive / did not request
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+}
+
+wrangleData3.13 <- function(d3.00) {
+  d3.00 %>%
+    # 1. select received and requested
+    select(ID, IDinGroup, Group, Condition,
+           ends_with('.player.received'),
+           ends_with('.player.request_amount')) %>%
+    # 2a. flip the variables to get what the player gave and what their partner requested
+    mutate_at(vars(ends_with(".player.received"), ends_with(".player.request_amount")), 
+              function(x) x[1:nrow(d3.00) + c(1,-1)]) %>%
+    gather(key, value, -ID, -IDinGroup, -Group, -Condition) %>%
+    extract(key, c("round_number", "variable"), 
+            "SurvivalGame.(.|..).player.(received|request_amount)") %>%
+    spread(variable, value) %>%
+    # 2b. rename the variables to match their new meaning
+    rename(gave              = received,
+           partner_requested = request_amount) %>%
+    mutate(round_number      = as.integer(round_number),
+           diff              = gave - partner_requested) %>%
+    arrange(round_number, ID, Group) %>%
+    # 3. drop NA - no request from partner
+    drop_na() %>%
+    # keep only Player 2s
+    filter(IDinGroup == 2)
+}
